@@ -1,0 +1,4 @@
+feed-sync[bbb10]: calling open_media
+feed-sync[bbb10]: open_media returned, err=None
+feed-sync[bbb10]: play err=None
+counter-video[bbb10]: started fps=25

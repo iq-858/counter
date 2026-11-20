@@ -1,0 +1,11 @@
+   Compiling cranpose-video v0.1.0 (D:\counter\cranpose-video)
+    Finished `test` profile [unoptimized] target(s) in 4.43s
+     Running tests\network.rs (target\debug\deps\network-0732d6a886e93a6c.exe)
+
+running 1 test
+info: VideoInfo { width: 416, height: 234, duration: None, frame_rate: Some(FrameRate { numerator: 25, denominator: 1 }), rotation: None }
+frames: 0, first: None, state: Ended
+test a_local_file_reports_what_happens ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.50s
+

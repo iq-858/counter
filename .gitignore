@@ -1,0 +1,11 @@
+/target
+/dist
+**/target/
+*.log
+build_*.txt
+check_*.txt
+cap_*.txt
+*.err
+.idea/
+.vscode/
+.agents/

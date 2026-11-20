@@ -1,0 +1,9 @@
+feed-sync[bbb10]: calling open_media
+feed-sync[bbb10]: open_media returned, err=None
+feed-sync[bbb10]: play err=None
+counter-video[bbb10]: started fps=25
+counter-video[flower]: started fps=29.97002997002997
+feed-sync[flower]: calling open_media
+feed-sync[flower]: open_media returned, err=None
+feed-sync[flower]: play err=None
+feed-sync[bbb10]: calling open_media

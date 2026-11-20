@@ -1,0 +1,30 @@
+[package]
+name = "counter"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["desktop"]
+desktop = ["cranpose/desktop", "cranpose/renderer-wgpu", "cranpose/renderer-wgpu-gles", "cranpose/preview", "cranpose/hot-reload"]
+ios = ["cranpose/ios", "cranpose/renderer-wgpu"]
+android = ["cranpose/android", "cranpose/renderer-wgpu"]
+
+[dependencies]
+anyhow = "1.0.104"
+cranpose = { version = "0.24.0", default-features = false }
+cranpose-animation = "0.24.0"
+cranpose-ui-layout = "0.24.0"
+cranpose-services = "0.24.0"
+cranpose-media = "0.24.0"
+cranpose-video = { path = "cranpose-video", features = ["native-audio"] }
+
+[profile.dev]
+debug = 0
+incremental = true
+
+[profile.dev.package."*"]
+opt-level = 2
