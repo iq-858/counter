@@ -10,7 +10,7 @@ publish = false
 [[bin]]
 name = "cranpose-video"
 path = "src/main.rs"
-required-features = ["player"]
+required-features = ["player", "desktop"]
 
 [features]
 default = ["widget", "player"]
@@ -24,9 +24,11 @@ player = [
     "widget",
     "native-audio",
     "dep:cranpose",
-    "cranpose/renderer-wgpu",
-    "cranpose/desktop",
 ]
+# The standalone `cargo run` demo window needs the desktop host and renderer.
+# This is kept out of `player` so an app can use VideoPlayer on iOS/Android
+# without pulling in cranpose/desktop, which collides with cranpose/ios.
+desktop = ["cranpose/renderer-wgpu", "cranpose/desktop"]
 # Linux ships no media framework, so its decoder is a GStreamer build behind
 # this feature. It needs libgstreamer1.0-dev, libgstreamer-plugins-base1.0-dev
 # and their plugins, which a base system does not carry. Without it the crate
