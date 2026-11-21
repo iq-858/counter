@@ -521,7 +521,11 @@ impl Reader {
                         // positive that killed valid local clips. Keep reading
                         // and only fail on a genuine `Failed` (3) status.
                         if status != AVAssetReaderStatus::Failed {
-                            continue;
+                            // Still reading (or unknown): these empty buffers are
+                            // normal. Yield to the worker instead of spinning in a
+                            // tight loop inside one read call. Returning no frame
+                            // lets the player poll again on the next cycle.
+                            return Ok(None);
                         }
                         let reason = unsafe { playback.reader.error() }.map_or_else(
                             || {
@@ -606,14 +610,12 @@ fn range(position: Duration) -> CMTimeRange {
         flags: objc2_core_media::CMTimeFlags(1),
         epoch: 0,
     };
+    // AVAssetReader.timeRange needs an OPEN-ENDED range. An invalid duration
+    // (the old zero/flags=0 here) made a seek yield no frames on iOS. Apple's
+    // kCMTimePositiveInfinity is the documented way to say "to the end".
     CMTimeRange {
         start,
-        duration: CMTime {
-            value: 0,
-            timescale: 0,
-            flags: objc2_core_media::CMTimeFlags(0),
-            epoch: 0,
-        },
+        duration: unsafe { objc2_core_media::kCMTimePositiveInfinity },
     }
 }
 

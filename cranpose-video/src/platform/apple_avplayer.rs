@@ -17,7 +17,11 @@
 
 use std::{
     ptr,
-    time::{Duration, Instant},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use dispatch2::DispatchQueue;
@@ -72,6 +76,8 @@ pub(crate) struct AvPlayerDecoder {
     item: SendRetained<AVPlayerItem>,
     output: SendRetained<AVPlayerItemVideoOutput>,
     info: VideoInfo,
+    /// Set by the worker's observe_shutdown so a buffering read can exit.
+    shutdown: Arc<AtomicBool>,
 }
 
 impl AvPlayerDecoder {
@@ -101,9 +107,11 @@ impl AvPlayerDecoder {
                 .ok_or_else(|| format!("the HLS address is not a valid URL: {address}"))?;
             let item = unsafe { AVPlayerItem::initWithURL(AVPlayerItem::alloc(mtm), &url) };
             let player = unsafe { AVPlayer::initWithPlayerItem(AVPlayer::alloc(mtm), Some(&item)) };
-            // cranpose pairs this source's audio on iOS; keep AVPlayer silent so
-            // the two paths do not play the same sound twice.
-            unsafe { player.setVolume(0.0) };
+            // HLS skips the generic audio wrapper (source.is_hls()), so AVPlayer
+            // is the ONLY sound source here. Keep its volume: muting it produced
+            // picture with no sound. `carries_audio()` returns true below so
+            // nothing else pairs a second player.
+            unsafe { player.setVolume(1.0) };
             let key: &NSString =
                 unsafe { &*(kCVPixelBufferPixelFormatTypeKey as *const _ as *const NSString) };
             let value: &AnyObject = &NSNumber::new_u32(BGRA);
@@ -165,6 +173,7 @@ impl AvPlayerDecoder {
             item,
             output,
             info,
+            shutdown: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -190,6 +199,23 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         PixelFormat::Rgba8
     }
 
+    fn carries_audio(&self) -> bool {
+        // AVPlayer plays the HLS stream's own audio track. Declaring this keeps
+        // the generic audio wrapper from pairing a second player (double sound).
+        true
+    }
+
+    fn observe_shutdown(&mut self, flag: Arc<AtomicBool>) {
+        self.shutdown = flag;
+    }
+
+    fn pause(&mut self) {
+        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
+        on_main(move |_| unsafe {
+            (&*(player_ptr as *const Retained<AVPlayer>)).pause();
+        });
+    }
+
     fn is_live(&self) -> bool {
         true
     }
@@ -206,13 +232,13 @@ impl crate::VideoDecoder for AvPlayerDecoder {
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
         let output_ptr = &self.output.0 as *const Retained<AVPlayerItemVideoOutput> as usize;
-        // A live HLS source buffers over HTTP, so the first frame can take well
-        // over 100 ms. Wait long enough that normal buffering is not mistaken
-        // for end-of-media (which would end the feed or churn windows). The
-        // worker polls read again, so this only bounds one frame's wait.
-        let deadline = Instant::now() + Duration::from_millis(2000);
+        // Block until a frame is ready or the worker signals shutdown. A live
+        // HLS source buffers over HTTP; returning Ok(None) on a buffering gap
+        // is read by the worker as end-of-media and triggers the recovery cycle
+        // that made playback freeze and restart repeatedly. Keeping the read
+        // pending through normal buffering removes that cycle.
         let mut found: Option<CMTime> = None;
-        while Instant::now() < deadline {
+        while !self.shutdown.load(Ordering::Acquire) {
             // Recompute the item time each poll: a single value held across a
             // long wait goes stale and keeps missing the moving play head.
             let time = self.item_time();
