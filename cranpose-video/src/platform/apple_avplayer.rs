@@ -42,6 +42,12 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 struct SendRetained<T: ?Sized>(Retained<T>);
 unsafe impl<T: ?Sized> Send for SendRetained<T> {}
 unsafe impl<T: ?Sized> Sync for SendRetained<T> {}
+impl<T: ?Sized> std::ops::Deref for SendRetained<T> {
+    type Target = Retained<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 fn on_main<R: Send>(action: impl FnOnce(MainThreadMarker) -> R + Send) -> R {
     if let Some(mtm) = MainThreadMarker::new() {
@@ -194,38 +200,43 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         if !got_frame {
             return Ok(None);
         }
-        let buffer = on_main(move |_| unsafe {
+        // Copy inside on_main: the CVPixelBuffer is not Send, so only the
+        // resulting RGBA bytes and dimensions cross back to the decode thread.
+        let copied: Option<(Vec<u8>, u32, u32)> = on_main(move |_| unsafe {
             let out = &*(output_ptr as *const Retained<AVPlayerItemVideoOutput>);
-            out.copyPixelBufferForItemTime_itemTimeForDisplay(time, ptr::null_mut())
+            let Some(buffer) =
+                out.copyPixelBufferForItemTime_itemTimeForDisplay(time, ptr::null_mut())
+            else {
+                return None;
+            };
+            let lock_flags = CVPixelBufferLockFlags::ReadOnly;
+            if CVPixelBufferLockBaseAddress(&buffer, lock_flags) != 0 {
+                return None;
+            }
+            let width = CVPixelBufferGetWidth(&buffer) as u32;
+            let height = CVPixelBufferGetHeight(&buffer) as u32;
+            let stride = CVPixelBufferGetBytesPerRow(&buffer);
+            let base = CVPixelBufferGetBaseAddress(&buffer).cast::<u8>();
+            let row = width as usize * 4;
+            let pixels = if !base.is_null() && stride >= row && width > 0 && height > 0 {
+                let mut pixels = vec![0u8; row * height as usize];
+                for y in 0..height as usize {
+                    let src = std::slice::from_raw_parts(base.add(y * stride), row);
+                    bgra_to_rgba(src, &mut pixels[y * row..][..row]);
+                }
+                Some(pixels)
+            } else {
+                None
+            };
+            CVPixelBufferUnlockBaseAddress(&buffer, lock_flags);
+            pixels.map(|pixels| (pixels, width, height))
         });
-        let Some(buffer) = buffer else {
+        let Some((pixels, width, height)) = copied else {
             return Ok(None);
         };
-        let lock_flags = CVPixelBufferLockFlags::ReadOnly;
-        if unsafe { CVPixelBufferLockBaseAddress(&buffer, lock_flags) } != 0 {
-            return Ok(None);
-        }
-        let width = unsafe { CVPixelBufferGetWidth(&buffer) } as u32;
-        let height = unsafe { CVPixelBufferGetHeight(&buffer) } as u32;
-        let stride = unsafe { CVPixelBufferGetBytesPerRow(&buffer) };
-        let base = unsafe { CVPixelBufferGetBaseAddress(&buffer) }.cast::<u8>();
-        let row = width as usize * 4;
-        let result = if !base.is_null() && stride >= row && width > 0 && height > 0 {
-            let needed = row * height as usize;
-            if rgba.len() != needed {
-                rgba.resize(needed, 0);
-            }
-            for y in 0..height as usize {
-                let src = unsafe { std::slice::from_raw_parts(base.add(y * stride), row) };
-                bgra_to_rgba(src, &mut rgba[y * row..][..row]);
-            }
-            let pts = self.first_pts.unwrap_or(Duration::ZERO);
-            self.first_pts = Some(pts + Duration::from_millis(33));
-            Some(DecodedFrame { pts, width, height })
-        } else {
-            None
-        };
-        unsafe { CVPixelBufferUnlockBaseAddress(&buffer, lock_flags) };
-        Ok(result)
+        *rgba = pixels;
+        let pts = self.first_pts.unwrap_or(Duration::ZERO);
+        self.first_pts = Some(pts + Duration::from_millis(33));
+        Ok(Some(DecodedFrame { pts, width, height }))
     }
 }
