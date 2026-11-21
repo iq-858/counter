@@ -22,7 +22,7 @@ use std::{
 };
 
 use dispatch2::DispatchQueue;
-use objc2::{MainThreadMarker, rc::Retained, runtime::AnyObject};
+use objc2::{AnyThread, MainThreadMarker, MainThreadOnly, rc::Retained, runtime::AnyObject};
 use objc2_av_foundation::{AVPlayer, AVPlayerItem, AVPlayerItemStatus, AVPlayerItemVideoOutput};
 use objc2_core_media::{CMTime, CMTimeMake};
 use objc2_core_video::{
@@ -68,10 +68,6 @@ pub(crate) struct AvPlayerDecoder {
 impl AvPlayerDecoder {
     pub(crate) fn open(path: &Path) -> Result<Self, VideoError> {
         let path = path.to_path_buf();
-        let url_result: Option<Retained<NSURL>> = on_main(move |_mtm| NSURL::from_file_path(&path));
-        let url = url_result.ok_or_else(|| {
-            VideoError::Decode("the joined HLS window path is not a file URL".to_owned())
-        })?;
         let setup: Result<
             (
                 Retained<AVPlayer>,
@@ -80,6 +76,8 @@ impl AvPlayerDecoder {
             ),
             String,
         > = on_main(move |mtm| {
+            let url = NSURL::from_file_path(&path)
+                .ok_or_else(|| "the joined HLS window path is not a file URL".to_owned())?;
             let item = unsafe { AVPlayerItem::initWithURL(AVPlayerItem::alloc(mtm), &url) };
             let player = unsafe { AVPlayer::initWithPlayerItem(AVPlayer::alloc(mtm), Some(&item)) };
             let key: &NSString =
