@@ -3,6 +3,11 @@
 
 #[cfg(all(feature = "native-audio", not(target_arch = "wasm32")))]
 mod audio;
+// Audio-output arbitration is used by both the AVPlayer path and the generic
+// SoftwareMediaPlayer path; keep it available wherever either audio owner can
+// exist (not wasm, which plays in the browser).
+#[cfg(not(target_arch = "wasm32"))]
+mod arbitration;
 mod decoder;
 mod diagnostics;
 mod error;

@@ -19,7 +19,7 @@ use std::{
     ptr,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -35,29 +35,14 @@ use objc2_core_video::{
 };
 use objc2_foundation::{NSDictionary, NSNotification, NSNumber, NSString, NSURL};
 
-use crate::{DecodedFrame, PixelFormat, VideoError, VideoInfo, pixels::bgra_to_rgba};
+use crate::{
+    DecodedFrame, PixelFormat, VideoError, VideoInfo,
+    arbitration::{DEFAULT_GROUP, claim, is_current},
+    pixels::bgra_to_rgba,
+};
 
 const BGRA: u32 = 0x4247_5241;
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Per-group generation of the AVPlayer that currently owns that group's audio.
-/// Players in the default group (0) mute each other on navigation, which is what
-/// a Reels feed wants; a feed that plays two clips at once puts them in distinct
-/// groups via `VideoPlayer::set_audio_group`, so both keep their sound.
-static AUDIO_OWNERS: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeMap<u64, u64>>> =
-    std::sync::OnceLock::new();
-
-fn audio_owners() -> &'static std::sync::Mutex<std::collections::BTreeMap<u64, u64>> {
-    AUDIO_OWNERS.get_or_init(|| std::sync::Mutex::new(std::collections::BTreeMap::new()))
-}
-
-/// Claims the current generation for `group` and returns it.
-fn claim_audio(group: u64) -> u64 {
-    let mut owners = audio_owners().lock().unwrap_or_else(|e| e.into_inner());
-    let next = owners.get(&group).copied().unwrap_or(0).wrapping_add(1);
-    owners.insert(group, next);
-    next
-}
 
 /// A `Retained` that is safe to move to the decode thread. All its uses go
 /// through `on_main`, so no ObjC message is sent from the wrong thread.
@@ -198,7 +183,7 @@ impl AvPlayerDecoder {
         // Claim the audio output: every older AVPlayer will now see a stale
         // generation and mute itself on its next read, so only this clip sounds.
         let group = 0;
-        let owner = claim_audio(group);
+        let owner = claim(group);
         Ok(Self {
             player,
             item,
@@ -246,7 +231,7 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         // Re-claim ownership in the new group. If a newer player already owns
         // it, read() will mute this one on its next call.
         self.group = group;
-        self.owner = claim_audio(group);
+        self.owner = claim(group);
     }
 
     fn pause(&mut self) {
@@ -288,19 +273,17 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         })
     }
 
+    /// Mute or restore this player's audio by volume, never by pausing: pausing
+    /// would stop the presentation clock and freeze the frame loop.
+    fn set_audible(&self, audible: bool) {
+        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
+        on_main(move |_| unsafe {
+            let player = &*(player_ptr as *const Retained<AVPlayer>);
+            player.setVolume(if audible { 1.0 } else { 0.0 });
+        });
+    }
+
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
-        // A newer AVPlayer owns the audio: mute this one so the outgoing clip
-        // does not play alongside the new one during a navigation. This is done
-        // inside the library, so the app needs no special cleanup.
-        let current = audio_owners()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&self.group)
-            .copied()
-            .unwrap_or(0);
-        if current != self.owner {
-            self.pause();
-        }
         let output_ptr = &self.output.0 as *const Retained<AVPlayerItemVideoOutput> as usize;
         // Block until a frame is ready or the worker signals shutdown. A live
         // HLS source buffers over HTTP; returning Ok(None) on a buffering gap
@@ -308,7 +291,16 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         // that made playback freeze and restart repeatedly. Keeping the read
         // pending through normal buffering removes that cycle.
         let mut found: Option<CMTime> = None;
+        let mut audible = true;
         while !self.shutdown.load(Ordering::Acquire) {
+            // Re-check audio ownership every poll. A newer player claiming this
+            // group mutes us immediately, and regaining ownership un-mutes us,
+            // without pausing the presentation clock.
+            let should_be_audible = is_current(self.group, self.owner);
+            if should_be_audible != audible {
+                self.set_audible(should_be_audible);
+                audible = should_be_audible;
+            }
             // Recompute the item time each poll: a single value held across a
             // long wait goes stale and keeps missing the moving play head.
             let time = self.item_time();

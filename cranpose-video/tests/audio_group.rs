@@ -127,11 +127,12 @@ fn two_players_can_share_a_group_and_reassigning_is_idempotent() {
     a.play().expect("the first player plays");
     b.play().expect("the second player plays");
 
-    a.set_audio_group(7).expect("the first player accepts a group");
-    b.set_audio_group(7).expect("the second player accepts the same group");
+    a.set_audio_group(7)
+        .expect("the first player accepts a group");
+    b.set_audio_group(7)
+        .expect("the second player accepts the same group");
     assert!(
-        wait_until(|| last_a.load(Ordering::SeqCst) == 7
-            && last_b.load(Ordering::SeqCst) == 7),
+        wait_until(|| last_a.load(Ordering::SeqCst) == 7 && last_b.load(Ordering::SeqCst) == 7),
         "both decoders must receive the shared group"
     );
     assert_eq!(calls_a.load(Ordering::SeqCst), 1);
@@ -163,8 +164,7 @@ fn different_groups_are_accepted() {
     a.set_audio_group(11).expect("the first group works");
     b.set_audio_group(22).expect("a different group works");
     assert!(
-        wait_until(|| last_a.load(Ordering::SeqCst) == 11
-            && last_b.load(Ordering::SeqCst) == 22),
+        wait_until(|| last_a.load(Ordering::SeqCst) == 11 && last_b.load(Ordering::SeqCst) == 22),
         "each decoder must receive its own group"
     );
     assert_ne!(

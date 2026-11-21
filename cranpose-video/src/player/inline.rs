@@ -73,6 +73,7 @@ impl Engine {
             Command::SetSpeed(speed) => inline.decoder.set_speed(speed),
             Command::SetMuted(muted) => inline.decoder.set_muted(muted),
             Command::SetVolume(volume) => inline.decoder.set_volume(volume),
+            Command::SetAudioGroup(group) => inline.decoder.set_audio_group(group),
             Command::Stop => return self.rewind(&mut inline, Duration::ZERO),
             Command::Seek(position) => return self.rewind(&mut inline, position),
             Command::Shutdown => inline.decoder.close(),

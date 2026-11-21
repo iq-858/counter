@@ -115,6 +115,12 @@ pub(crate) fn uri_for_path(path: &Path) -> String {
 /// carries no audio behaves exactly like one without this module.
 pub(crate) struct Audio {
     player: SoftwareMediaPlayer,
+    /// Audio group for mutual exclusion. Group 0 (default) means newest wins.
+    group: u64,
+    /// Our claim token in the group; 0 until the first audible use.
+    owner: u64,
+    /// Whether arbitration currently suppresses this player's sound.
+    suppressed: bool,
     /// The source currently attached, ready or not.
     source: Option<String>,
     /// The last source a prepare was attempted for, so a source that has no
@@ -158,6 +164,9 @@ impl Audio {
     pub(crate) fn new() -> Self {
         Self {
             player: SoftwareMediaPlayer::new(),
+            group: crate::arbitration::DEFAULT_GROUP,
+            owner: 0,
+            suppressed: false,
             source: None,
             attempted: None,
             ready: false,
@@ -413,7 +422,10 @@ impl Audio {
             self.reanchor(head);
             self.playing = true;
         }
-        if self.ready {
+        // Claim ownership at first audible use, not at construction, so
+        // preloading the next clip does not mute the current one.
+        self.arbitrate();
+        if self.ready && !self.suppressed {
             let _ = self.player.play();
         }
     }
@@ -476,6 +488,10 @@ impl Audio {
     /// re-anchored to, a stall recovery, a live rollover — moves the sound, so
     /// ordinary run-out between two clocks never produces an audible seek.
     pub(crate) fn sync_clock(&mut self, position: Duration) {
+        // Re-check group ownership every frame so a newer player in this group
+        // mutes us promptly. This runs before the `!ready` guard because a
+        // suppressed player may still be preparing.
+        self.arbitrate();
         if !self.ready {
             return;
         }
@@ -503,6 +519,41 @@ impl Audio {
 
     fn effective_volume(&self) -> f32 {
         if self.muted { 0.0 } else { self.volume }
+    }
+
+    /// Applies audio-group arbitration. Call on first audible use and per frame.
+    /// Claims ownership on first sound; mutes (volume 0, never stop) when a newer
+    /// player in the same group wins, and restores when this player is current
+    /// again. Does not touch `playing`/clock bookkeeping.
+    fn arbitrate(&mut self) {
+        if self.owner == 0 {
+            self.owner = crate::arbitration::claim(self.group);
+        }
+        let current = crate::arbitration::is_current(self.group, self.owner);
+        if current == self.suppressed {
+            // suppressed=true means we were muted; current=true means we should
+            // be audible. A transition happens when these disagree.
+            return;
+        }
+        self.suppressed = !current;
+        if self.ready {
+            let volume = if self.suppressed {
+                0.0
+            } else {
+                self.effective_volume()
+            };
+            self.player.set_volume(volume);
+        }
+    }
+
+    /// Moves this audio to a group, claiming a fresh token there.
+    pub(crate) fn set_group(&mut self, group: u64) {
+        self.group = group;
+        self.owner = crate::arbitration::claim(group);
+        self.suppressed = false;
+        if self.ready {
+            self.player.set_volume(self.effective_volume());
+        }
     }
 }
 
@@ -657,6 +708,14 @@ impl VideoDecoder for DirectAudioDecoder {
     fn set_volume(&mut self, volume: f32) {
         self.inner.set_volume(volume);
         self.audio.set_volume(volume);
+    }
+
+    fn set_audio_group(&mut self, group: u64) {
+        // Forward to both owners: the platform decoder (which may carry audio)
+        // and the generic SoftwareMediaPlayer paired with this source, so a
+        // newer player in the same group mutes this one on either path.
+        self.inner.set_audio_group(group);
+        self.audio.set_group(group);
     }
 
     fn sync_clock(&mut self, position: Duration) {
