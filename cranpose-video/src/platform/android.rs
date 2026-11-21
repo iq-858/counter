@@ -280,13 +280,13 @@ impl Reader {
                 // A close may have landed while Java was building the objects.
                 // Recheck under the same lock that installs them.
                 if gate.stopped() {
-                    release_media_refs(env, media);
+                    release_media_refs(env, &media);
                     return Err(VideoError::Source("the player is closing".to_owned()));
                 }
                 if state.media.is_some() {
                     // Another call won the race. Release this attempt's objects
                     // and let its spill file go out of scope.
-                    release_media_refs(env, media);
+                    release_media_refs(env, &media);
                 } else {
                     state.media = Some(Arc::new(media));
                     state.spill = spill;
@@ -597,7 +597,7 @@ impl Reader {
             self.finished = true;
             return Ok((0, 0, 0, eos_flag));
         }
-        let micros = env
+        let micros = match env
             .call_method(
                 media.extractor.as_obj(),
                 jni_str!("getSampleTime"),
@@ -605,7 +605,21 @@ impl Reader {
                 &[],
             )
             .and_then(jni::JValueOwned::j)
-            .unwrap_or(0);
+        {
+            Ok(value) => value,
+            Err(error) => {
+                // A failed call leaves a pending Java exception. Clearing it is
+                // mandatory: the next getInputBuffer JNI call would otherwise run
+                // with an exception pending, which is undefined behaviour.
+                crate::diag(
+                    "WARN",
+                    "android.sample",
+                    &format!("getSampleTime failed: {error}"),
+                );
+                clear(env);
+                0
+            }
+        };
         let input = env
             .call_method(
                 media.codec.as_obj(),
@@ -1079,7 +1093,9 @@ fn setup_with_extractor<'local>(
         let codec = create_codec(env, &mime, gate)?;
         stopped(gate)?;
         let result = setup_with_codec(env, extractor, &codec, &format, info, gate);
-        release_local(env, &codec);
+        // `codec` is a Global; it deletes its own JNI reference on drop. Passing
+        // it to release_local would call DeleteLocalRef on a global handle,
+        // which is undefined behaviour (CheckJNI can abort on some devices).
         result
     })();
     release_local(env, &format);
@@ -1104,11 +1120,11 @@ fn setup_with_codec<'local>(
         flags: CodecFlags::read(env),
     };
     if gate.stopped() {
-        release_media_refs(env, media);
+        release_media_refs(env, &media);
         return Err(VideoError::Source("the player is closing".to_owned()));
     }
     if let Err(error) = media.start(env, gate) {
-        release_media_refs(env, media);
+        release_media_refs(env, &media);
         return Err(error);
     }
     stopped(gate)?;
@@ -1251,7 +1267,7 @@ fn release_local<'object, O: AsRef<JObject<'object>>>(env: &mut Env<'_>, object:
 
 /// Releases the platform objects and their global references on a failure path
 /// or during close. Called only from an attached decode thread.
-fn release_media_refs(env: &mut Env<'_>, media: Media) {
+fn release_media_refs(env: &mut Env<'_>, media: &Media) {
     let _ = env.call_method(
         media.codec.as_obj(),
         jni_str!("release"),
@@ -1266,9 +1282,6 @@ fn release_media_refs(env: &mut Env<'_>, media: Media) {
         &[],
     );
     clear(env);
-    // Dropping the `Global`s here also deletes their JNI references while the
-    // thread is still attached.
-    drop(media);
 }
 
 impl VideoDecoder for Reader {
@@ -1329,19 +1342,27 @@ impl VideoDecoder for Reader {
         };
         if let Some(media) = media {
             // Cleanup attaches its own thread; the shutdown gate must not stop
-            // it from releasing objects an earlier read created.
-            let _ = vm().and_then(|vm| {
+            // it from releasing objects an earlier read created. Release the
+            // native codec/extractor through a BORROWED reference first, so the
+            // release() calls run even if VM lookup, attach, or try_unwrap fails
+            // (previously those paths skipped release() and leaked the decoder).
+            let released = vm().and_then(|vm| {
                 vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-                    match Arc::try_unwrap(media) {
-                        Ok(owned) => release_media_refs(env, owned),
-                        Err(shared) => drop(shared),
-                    }
+                    release_media_refs(env, &media);
                     Ok(())
                 })
                 .map_err(|error| {
                     VideoError::Source(format!("cannot reach the Android runtime: {error}"))
                 })
             });
+            if let Err(error) = &released {
+                crate::diag(
+                    "WARN",
+                    "android.close",
+                    &format!("could not attach to release the decoder: {error}"),
+                );
+            }
+            drop(media);
         }
         let mut state = self.state.lock().unwrap();
         state.spill = None;

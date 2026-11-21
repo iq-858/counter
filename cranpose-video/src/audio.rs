@@ -269,7 +269,7 @@ impl Audio {
                 {
                     self.route = current_output_route();
                 }
-                self.player.set_volume(self.effective_volume());
+                self.player.set_volume(self.audible_volume());
                 self.player.set_speed(self.speed);
                 crate::diag(
                     "INFO",
@@ -338,6 +338,13 @@ impl Audio {
     pub(crate) fn detach(&mut self) {
         if self.ready {
             self.player.stop();
+        }
+        // Give up the audio-group claim so a surviving player in this group can
+        // be promoted instead of staying muted after this one closes.
+        if self.owner != 0 {
+            crate::arbitration::release(self.group, self.owner);
+            self.owner = 0;
+            self.suppressed = false;
         }
         self.ready = false;
         self.retry_at = None;
@@ -424,7 +431,7 @@ impl Audio {
         }
         // Claim ownership at first audible use, not at construction, so
         // preloading the next clip does not mute the current one.
-        self.arbitrate();
+        self.claim_if_needed();
         if self.ready && !self.suppressed {
             let _ = self.player.play();
         }
@@ -453,14 +460,14 @@ impl Audio {
     pub(crate) fn set_muted(&mut self, muted: bool) {
         self.muted = muted;
         if self.ready {
-            self.player.set_volume(self.effective_volume());
+            self.player.set_volume(self.audible_volume());
         }
     }
 
     pub(crate) fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
         if self.ready {
-            self.player.set_volume(self.effective_volume());
+            self.player.set_volume(self.audible_volume());
         }
     }
 
@@ -521,38 +528,63 @@ impl Audio {
         if self.muted { 0.0 } else { self.volume }
     }
 
+    /// Volume honoring audio-group suppression, so a re-attach, mute or volume
+    /// change cannot silently unmute a player whose group is owned by another.
+    fn audible_volume(&self) -> f32 {
+        if self.suppressed {
+            0.0
+        } else {
+            self.effective_volume()
+        }
+    }
+
     /// Applies audio-group arbitration. Call on first audible use and per frame.
     /// Claims ownership on first sound; mutes (volume 0, never stop) when a newer
     /// player in the same group wins, and restores when this player is current
     /// again. Does not touch `playing`/clock bookkeeping.
     fn arbitrate(&mut self) {
+        // Do NOT claim here: sync_clock calls this on every published frame,
+        // including frames published while paused, so a non-audible player must
+        // never steal a group from the one actually playing. The claim happens
+        // only in `play()` via `claim_if_needed`.
         if self.owner == 0 {
-            self.owner = crate::arbitration::claim(self.group);
+            return;
         }
         let current = crate::arbitration::is_current(self.group, self.owner);
-        if current == self.suppressed {
-            // suppressed=true means we were muted; current=true means we should
-            // be audible. A transition happens when these disagree.
+        // `suppressed` is true exactly when we are NOT current. No transition is
+        // needed when current == !suppressed (the steady state). The previous
+        // `current == suppressed` check was inverted and never muted a stale
+        // player, so two same-group clips both kept sounding.
+        if current == !self.suppressed {
             return;
         }
         self.suppressed = !current;
         if self.ready {
-            let volume = if self.suppressed {
-                0.0
-            } else {
-                self.effective_volume()
-            };
-            self.player.set_volume(volume);
+            self.player.set_volume(self.audible_volume());
         }
     }
 
-    /// Moves this audio to a group, claiming a fresh token there.
+    /// Claims this group's audio token on first audible use, then applies the
+    /// current suppression state. Called only from `play()`.
+    fn claim_if_needed(&mut self) {
+        if self.owner == 0 {
+            self.owner = crate::arbitration::claim(self.group);
+        }
+        self.arbitrate();
+    }
+
+    /// Moves this audio to a group, claiming a fresh token there. Releasing the
+    /// old claim avoids leaking a group entry; suppression is derived from the
+    /// new claim rather than assumed false.
     pub(crate) fn set_group(&mut self, group: u64) {
+        if self.owner != 0 && self.group != group {
+            crate::arbitration::release(self.group, self.owner);
+        }
         self.group = group;
         self.owner = crate::arbitration::claim(group);
-        self.suppressed = false;
+        self.suppressed = !crate::arbitration::is_current(group, self.owner);
         if self.ready {
-            self.player.set_volume(self.effective_volume());
+            self.player.set_volume(self.audible_volume());
         }
     }
 }

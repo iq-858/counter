@@ -49,3 +49,96 @@ pub(crate) fn is_current(group: u64, token: u64) -> bool {
     let owners = owners().lock().unwrap_or_else(|e| e.into_inner());
     owners.get(&group).copied() == Some(token)
 }
+
+/// Releases a claim. If this was the newest claim in the group, the entry is
+/// removed so a surviving player in the same group can be promoted on its next
+/// check instead of staying muted forever. Also bounds the map: a group with no
+/// players no longer occupies an entry.
+pub(crate) fn release(group: u64, token: u64) {
+    if token == 0 {
+        return;
+    }
+    let mut owners = owners().lock().unwrap_or_else(|e| e.into_inner());
+    if owners.get(&group).copied() == Some(token) {
+        owners.remove(&group);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The owner registry is process-global, so every test claims its own group
+    // to stay independent of the others (which the harness may run in parallel).
+
+    #[test]
+    fn a_newer_claim_in_the_same_group_stales_the_first_token() {
+        let group = 1_001;
+        let first = claim(group);
+        let second = claim(group);
+
+        assert_ne!(first, second, "each claim returns a fresh generation token");
+        assert!(
+            !is_current(group, first),
+            "the first token is stale once a second player claims the group"
+        );
+        assert!(is_current(group, second), "the newest token is current");
+    }
+
+    #[test]
+    fn claims_in_different_groups_do_not_affect_each_other() {
+        let group_a = 1_002;
+        let group_b = 1_003;
+        let token_a = claim(group_a);
+        let token_b_first = claim(group_b);
+        let token_b_second = claim(group_b);
+
+        assert!(
+            is_current(group_a, token_a),
+            "claims in another group must not stale this token"
+        );
+        assert!(
+            !is_current(group_b, token_b_first),
+            "claims inside group B stale each other"
+        );
+        assert!(
+            is_current(group_b, token_b_second),
+            "group B tracks its own newest claim"
+        );
+    }
+
+    #[test]
+    fn an_unclaimed_zero_token_is_treated_as_current() {
+        assert_eq!(DEFAULT_GROUP, 0, "the implicit default group is group 0");
+
+        let group = 1_004;
+        assert!(
+            is_current(group, 0),
+            "token 0 means 'never claimed' and must behave as current"
+        );
+
+        claim(group);
+        assert!(
+            is_current(group, 0),
+            "token 0 stays current even after the group has been claimed"
+        );
+    }
+
+    #[test]
+    fn many_claims_leave_only_the_last_token_current() {
+        let group = 1_005;
+        let tokens: Vec<u64> = (0..32).map(|_| claim(group)).collect();
+        let last = *tokens.last().expect("at least one claim was made");
+
+        assert!(
+            tokens[..tokens.len() - 1]
+                .iter()
+                .all(|&token| !is_current(group, token)),
+            "every earlier generation is stale"
+        );
+        assert!(
+            is_current(group, last),
+            "only the most recent claim is current"
+        );
+    }
+}
