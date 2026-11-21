@@ -180,18 +180,16 @@ impl AvPlayerDecoder {
             frame_rate: None,
             rotation: Default::default(),
         };
-        // Claim the audio output: every older AVPlayer will now see a stale
-        // generation and mute itself on its next read, so only this clip sounds.
-        let group = 0;
-        let owner = claim(group);
+        // Claim on first audible use (play), not at construction: merely opening
+        // or preloading the next HLS clip must not mute the active one.
         Ok(Self {
             player,
             item,
             output,
             info,
             shutdown: Arc::new(AtomicBool::new(false)),
-            owner,
-            group,
+            owner: 0,
+            group: DEFAULT_GROUP,
         })
     }
 
@@ -228,10 +226,14 @@ impl crate::VideoDecoder for AvPlayerDecoder {
     }
 
     fn set_audio_group(&mut self, group: u64) {
-        // Re-claim ownership in the new group. If a newer player already owns
-        // it, read() will mute this one on its next call.
+        // Always release the previous claim before claiming, even for the same
+        // group, so repeated reassignment does not stack orphaned tokens.
+        if self.owner != 0 {
+            crate::arbitration::release(self.group, self.owner);
+        }
+        let was_claimed = self.owner != 0;
         self.group = group;
-        self.owner = claim(group);
+        self.owner = if was_claimed { claim(group) } else { 0 };
     }
 
     fn pause(&mut self) {
@@ -242,6 +244,11 @@ impl crate::VideoDecoder for AvPlayerDecoder {
     }
 
     fn play(&mut self) {
+        // Claim on first audible use, not construction, so preloading another
+        // HLS clip does not mute the one currently playing.
+        if self.owner == 0 {
+            self.owner = claim(self.group);
+        }
         let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
         on_main(move |_| unsafe {
             (&*(player_ptr as *const Retained<AVPlayer>)).play();
@@ -253,6 +260,11 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         // default no-op let the outgoing clip keep playing until ARC deallocated
         // the player, which was the double-audio window on navigation.
         self.shutdown.store(true, Ordering::Release);
+        // Release the claim so a surviving same-group player is promoted.
+        if self.owner != 0 {
+            crate::arbitration::release(self.group, self.owner);
+            self.owner = 0;
+        }
         let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
         on_main(move |_| unsafe {
             (&*(player_ptr as *const Retained<AVPlayer>)).pause();

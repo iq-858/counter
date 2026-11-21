@@ -877,6 +877,28 @@ impl Reader {
             return Ok(Some((sample, stated.saturating_sub(origin))));
         }
     }
+
+    /// Reports a decode failure into the recovery session. Windows decode
+    /// failures are `VideoError::Decode` (non-transient), so `Shared::fail` does
+    /// not arm recovery; reporting here gives the worker a bounded rebuild
+    /// attempt like HLS and iOS get, while the public failure stays visible.
+    #[cfg(all(
+        feature = "native-audio",
+        not(target_os = "linux"),
+        not(target_arch = "wasm32")
+    ))]
+    fn report_decode_failure(&self, reason: &str) {
+        if let Some(session) = &self.session {
+            session.failed("mf.decode", reason.to_owned());
+        }
+    }
+
+    #[cfg(not(all(
+        feature = "native-audio",
+        not(target_os = "linux"),
+        not(target_arch = "wasm32")
+    )))]
+    fn report_decode_failure(&self, _reason: &str) {}
 }
 
 impl VideoDecoder for Reader {
@@ -908,7 +930,14 @@ impl VideoDecoder for Reader {
     }
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
-        let Some((sample, pts)) = self.next_sample()? else {
+        let sample_and_pts = match self.next_sample() {
+            Ok(value) => value,
+            Err(error) => {
+                self.report_decode_failure(&error.to_string());
+                return Err(error);
+            }
+        };
+        let Some((sample, pts)) = sample_and_pts else {
             return Ok(None);
         };
         let width = self.info.width as usize;

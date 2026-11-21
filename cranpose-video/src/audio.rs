@@ -577,7 +577,10 @@ impl Audio {
     /// old claim avoids leaking a group entry; suppression is derived from the
     /// new claim rather than assumed false.
     pub(crate) fn set_group(&mut self, group: u64) {
-        if self.owner != 0 && self.group != group {
+        // Always release the previous claim before claiming a new one, even
+        // when the group is unchanged. Otherwise repeated reassignment stacks
+        // orphaned tokens in the process-global registry (unbounded growth).
+        if self.owner != 0 {
             crate::arbitration::release(self.group, self.owner);
         }
         self.group = group;

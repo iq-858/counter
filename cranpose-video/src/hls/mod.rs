@@ -1412,7 +1412,16 @@ impl Stream {
     /// picks another channel.
     fn note_failure(&mut self, error: &VideoError) {
         let text = error.to_string();
-        if text.contains("answered 403") || text.contains("answered 410") {
+        // A client error that is not one of the retryable statuses will never
+        // succeed by asking again: a missing file (404), forbidden/expired
+        // token (403/410), or a bad request is terminal for this address. Only
+        // 408/425/429 (handled as transient in status_failure) clear on retry.
+        // Re-requesting any other 4xx forever only floods the log and hammers
+        // the origin, so stop and leave a truthful failure for the caller.
+        let terminal = (400..500)
+            .filter(|code| !matches!(code, 408 | 425 | 429))
+            .any(|code| text.contains(&format!("answered {code}")));
+        if terminal {
             self.permanent_failure = true;
         }
     }
