@@ -1,6 +1,10 @@
 [app]
 name = "Counter"
 identifier = "com.example.counter"
+# Copy the clip catalogue into the app bundle. Without this the IPA holds only
+# the executable and Info.plist, so every LocalMp4 source resolves to a path
+# that does not exist on the device and the decoder reports "no video track".
+assets = ["assets"]
 
 [ios]
 plist = "ios/Info.plist"

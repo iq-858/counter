@@ -3,6 +3,7 @@
 //! The sections are separate modules so the pager, the catalogue view and the
 //! decode test console stay independent of each other.
 
+mod errors;
 mod library;
 mod live;
 mod reels;
@@ -26,6 +27,7 @@ enum Section {
     Live,
     Library,
     Tests,
+    Errors,
 }
 
 /// Maps the optional CLI clip to a starting pager page.
@@ -79,11 +81,13 @@ pub fn AppRoot() {
                         let live = section.clone();
                         let library = section.clone();
                         let tests = section.clone();
+                        let errors = section.clone();
                         move || {
                             section_tab("Reels", Section::Reels, reels.clone());
                             section_tab("Live", Section::Live, live.clone());
                             section_tab("Library", Section::Library, library.clone());
                             section_tab("Decode tests", Section::Tests, tests.clone());
+                            section_tab("Errors", Section::Errors, errors.clone());
                         }
                     },
                 );
@@ -92,6 +96,7 @@ pub fn AppRoot() {
                     Section::Live => live::LiveSection(),
                     Section::Library => library::LibrarySection(initial_clip_label()),
                     Section::Tests => tests_console::TestsSection(),
+                    Section::Errors => errors::ErrorsSection(),
                 }
             }
         },

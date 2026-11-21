@@ -165,8 +165,28 @@ pub fn catalogue() -> Vec<Clip> {
 /// Cargo-provided manifest path; this helper makes runtime file lookup robust.
 pub fn resolved_source(clip: &Clip) -> String {
     if clip.kind == ClipKind::LocalMp4 {
-        let root = option_env!("CARGO_MANIFEST_DIR").unwrap_or(".");
-        format!("{root}/{}", clip.source)
+        // On a phone the catalogue is copied into the app bundle next to the
+        // executable by CranposeBuild.toml's `assets = ["assets"]`. There is no
+        // Cargo manifest directory at runtime, so resolve against the bundle
+        // rather than the compile-time path (a Windows path that does not exist
+        // on iOS), which used to make every clip report "no video track".
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            if let Some(bundle) = std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(|dir| dir.to_path_buf()))
+            {
+                return bundle.join(clip.source).to_string_lossy().into_owned();
+            }
+            // Fall back to a bundle-relative path if the executable path is
+            // unavailable (the process working directory is the bundle root).
+            return clip.source.to_owned();
+        }
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        {
+            let root = option_env!("CARGO_MANIFEST_DIR").unwrap_or(".");
+            format!("{root}/{}", clip.source)
+        }
     } else {
         clip.source.to_owned()
     }

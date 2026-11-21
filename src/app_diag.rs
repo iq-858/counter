@@ -13,7 +13,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -21,6 +21,22 @@ use std::{
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 
 static PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// A small in-memory ring of recent WARN/ERROR/PANIC lines, so the UI can show
+/// background failures that a phone user would otherwise never see (the file
+/// log lives in a sandbox the user cannot open). Bounded so a long session
+/// cannot grow without limit.
+const SCREEN_CAP: usize = 40;
+static SCREEN: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+fn screen() -> &'static Mutex<Vec<String>> {
+    SCREEN.get_or_init(|| Mutex::new(Vec::with_capacity(SCREEN_CAP)))
+}
+
+/// Returns a snapshot of the most recent lines (oldest first) for the UI.
+pub(crate) fn recent_lines() -> Vec<String> {
+    screen().lock().map(|lines| lines.clone()).unwrap_or_default()
+}
 
 fn log_path() -> &'static PathBuf {
     PATH.get_or_init(|| {
@@ -102,6 +118,21 @@ pub(crate) fn log(level: &str, target: &str, message: &str) {
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = file.write_all(line.as_bytes());
         let _ = file.flush();
+    }
+    // Mirror notable lines to the in-memory ring for the on-screen error view.
+    if matches!(level, "WARN" | "ERROR" | "PANIC") {
+        if let Ok(mut lines) = screen().lock() {
+            if lines.len() >= SCREEN_CAP {
+                lines.remove(0);
+            }
+            let short = format!(
+                "{} [{}] {}",
+                &timestamp()[11..23],
+                target,
+                message.replace('\n', " ")
+            );
+            lines.push(short);
+        }
     }
 }
 
