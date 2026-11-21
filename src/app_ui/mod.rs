@@ -87,7 +87,16 @@ pub fn AppRoot() {
                             section_tab("Live", Section::Live, live.clone());
                             section_tab("Library", Section::Library, library.clone());
                             section_tab("Decode tests", Section::Tests, tests.clone());
-                            section_tab("Errors", Section::Errors, errors.clone());
+                            let err_count = crate::app_diag::recent_lines().len();
+                            section_tab(
+                                if err_count > 0 {
+                                    "Errors !"
+                                } else {
+                                    "Errors"
+                                },
+                                Section::Errors,
+                                errors.clone(),
+                            );
                         }
                     },
                 );
@@ -105,19 +114,23 @@ pub fn AppRoot() {
 
 /// One tab of the section switcher.
 #[composable]
-fn section_tab(label: &'static str, target: Section, current: MutableState<Section>) {
+fn section_tab(label: impl Into<String>, target: Section, current: MutableState<Section>) {
+    let label = label.into();
     let selected = current.get() == target;
     let on_click = current.clone();
     Button(
         Modifier::empty().padding(6.0),
         ButtonSpec::new(),
-        move || {
-            crate::app_diag::info("nav", format!("switch to {label}"));
-            on_click.set(target);
+        {
+            let label = label.clone();
+            move || {
+                crate::app_diag::info("nav", format!("switch to {label}"));
+                on_click.set(target);
+            }
         },
         move || {
             Text(
-                label,
+                label.clone(),
                 Modifier::empty(),
                 if selected {
                     theme::accent_style()

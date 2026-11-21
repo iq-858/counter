@@ -150,6 +150,7 @@ pub(crate) fn ActiveReel(clip: Clip) {
         if let Err(error) = player.play() {
             crate::app_diag::error("reels.play", format!("{}: {error}", pump_log_key));
         }
+        let mut failed_logged = false;
         loop {
             scope.with_frame_nanos(|_| ()).await;
             // A source-keyed player is normally closed by the effect being
@@ -161,6 +162,19 @@ pub(crate) fn ActiveReel(clip: Clip) {
                     format!("{}: player closed while its pump was live", pump_log_key),
                 );
                 break;
+            }
+            // Surface a decoder failure into the on-screen error view even when
+            // no diagnostic sink message accompanied it. Log once per failure.
+            if let VideoState::Failed(ref reason) = player.state() {
+                if !failed_logged {
+                    crate::app_diag::error(
+                        "reels.state",
+                        format!("{}: decoder failed: {}", pump_log_key, reason),
+                    );
+                    failed_logged = true;
+                }
+            } else {
+                failed_logged = false;
             }
             if let Some(frame) = player.take_frame() {
                 let (width, height) = (frame.width(), frame.height());
