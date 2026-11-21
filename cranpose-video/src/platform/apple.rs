@@ -212,56 +212,83 @@ impl Reader {
         ),
         VideoError,
     > {
-        // SAFETY: the asset is open and an asset reader needs no other setup.
-        let reader =
-            unsafe { AVAssetReader::initWithAsset_error(AVAssetReader::alloc(), &self.asset) }
-                .map_err(|error| VideoError::Source(describe(&error)))?;
-        // `nil` output settings ask AVFoundation to vend the samples in the
-        // track's own format — the one decoder output it is guaranteed to have.
-        // Per Apple's AVAssetReaderTrackOutput docs, requesting a pixel format
-        // the track cannot produce makes init/canAddOutput fail. Asking for the
-        // original format is the universal fallback.
+        // Try the requested pixel format first. Per Apple's docs, a track that
+        // cannot produce that format is refused; the universal fallback is
+        // `nil` output settings, which vend samples in the track's own format.
+        // Both attempts need a fresh reader, because an output can only be
+        // added before reading starts and `canAddOutput` must be asked first.
         let settings = settings(format);
-        // SAFETY: the track belongs to the open asset, and the settings hold
-        // only constant keys and an integer.
-        let make_output = |settings: Option<Retained<NSDictionary<NSString, AnyObject>>>| unsafe {
-            AVAssetReaderTrackOutput::initWithTrack_outputSettings(
-                AVAssetReaderTrackOutput::alloc(),
-                &self.track,
-                settings.as_ref(),
-            )
-        };
-        let output = make_output(Some(settings)).or_else(|| make_output(None));
-        // SAFETY: the reader is open and the output is not attached yet.
-        // `canAddOutput` must be consulted BEFORE `addOutput`: asking after the
-        // output is attached reports the wrong result and made valid tracks
-        // look refused.
-        let output = output.ok_or_else(|| {
-            VideoError::Decode("AVFoundation cannot create the video track output".to_owned())
-        })?;
-        let added = unsafe { reader.canAddOutput(&output) };
-        if !added {
-            return Err(VideoError::Decode(
-                "AVFoundation refused the video track output".to_owned(),
-            ));
+        let mut last_error = "AVFoundation refused the video track output".to_owned();
+        for attempt in 0..2 {
+            // SAFETY: the asset is open and an asset reader needs no other setup.
+            let reader =
+                unsafe { AVAssetReader::initWithAsset_error(AVAssetReader::alloc(), &self.asset) }
+                    .map_err(|error| VideoError::Source(describe(&error)))?;
+            // SAFETY: the track belongs to this asset; the settings hold only
+            // constant keys and an integer. `None` asks for the native format.
+            let chosen: Option<Retained<NSDictionary<NSString, AnyObject>>> = if attempt == 0 {
+                Some(settings.clone())
+            } else {
+                None
+            };
+            let output = unsafe {
+                AVAssetReaderTrackOutput::initWithTrack_outputSettings(
+                    AVAssetReaderTrackOutput::alloc(),
+                    &self.track,
+                    chosen.as_ref().map(|value| value.as_ref()),
+                )
+            };
+            // `canAddOutput` is the documented association check and must be
+            // consulted before `addOutput`. Asking afterwards reports the wrong
+            // result and made valid tracks look refused.
+            let added = unsafe { reader.canAddOutput(&output) };
+            if !added {
+                if attempt == 0 {
+                    crate::diag(
+                        "WARN",
+                        "apple.output",
+                        &format!(
+                            "{} format refused; retrying with the track's native format",
+                            format_name(format)
+                        ),
+                    );
+                    if position > Duration::ZERO {
+                        // no state to restore: the reader is dropped on retry.
+                    }
+                    continue;
+                }
+                last_error = "AVFoundation refused the video track output".to_owned();
+                return Err(VideoError::Decode(last_error));
+            }
+            unsafe { reader.addOutput(&output) };
+            if position > Duration::ZERO {
+                // SAFETY: the range states the position in the media's own time,
+                // and the reader is not reading yet.
+                unsafe { reader.setTimeRange(range(position)) };
+            }
+            // SAFETY: the output is attached and the reader is not reading yet.
+            let reading = unsafe { reader.startReading() };
+            if !reading {
+                let reason = unsafe { reader.error() }.map_or_else(
+                    || VideoError::Decode("AVFoundation cannot read the track".to_owned()),
+                    |error| VideoError::Source(describe(&error)),
+                );
+                if attempt == 0 {
+                    crate::diag(
+                        "WARN",
+                        "apple.output",
+                        &format!(
+                            "reader refused to start with {}: retrying native",
+                            format_name(format)
+                        ),
+                    );
+                    continue;
+                }
+                return Err(reason);
+            }
+            return Ok((reader, output, format));
         }
-        unsafe { reader.addOutput(&output) };
-        if position > Duration::ZERO {
-            // SAFETY: the range states the position in the media's own time,
-            // and the reader is not reading yet.
-            unsafe { reader.setTimeRange(range(position)) };
-        }
-        // SAFETY: the output is attached and the reader is not reading yet.
-        let reading = unsafe { reader.startReading() };
-        if !reading {
-            // SAFETY: the reader failed, so it holds the reason.
-            let reason = unsafe { reader.error() };
-            return Err(reason.map_or_else(
-                || VideoError::Decode("AVFoundation cannot read the track".to_owned()),
-                |error| VideoError::Source(describe(&error)),
-            ));
-        }
-        Ok((reader, output, format))
+        Err(VideoError::Decode(last_error))
     }
 
     /// Copies one sample's picture into `rgba` as top-down RGBA8 rows.
@@ -547,6 +574,14 @@ fn settings(format: PixelFormat) -> Retained<NSDictionary<NSString, AnyObject>> 
         PixelFormat::Rgba8 => BGRA,
     });
     NSDictionary::from_slices(&[key], &[value])
+}
+
+/// A readable name for a pixel format, for diagnostics only.
+fn format_name(format: PixelFormat) -> &'static str {
+    match format {
+        PixelFormat::Nv12 => "NV12",
+        PixelFormat::Rgba8 => "BGRA",
+    }
 }
 
 /// The four character code of `kCVPixelFormatType_32BGRA`.
