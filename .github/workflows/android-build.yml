@@ -40,12 +40,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # ubuntu-latest already ships the Android SDK under $ANDROID_HOME. Do not
+      # use android-actions/setup-android@v3: it tries to install the retired
+      # `tools` package and fails with sdkmanager exit code 1.
       - name: Install Android SDK packages and NDK
         run: |
-          sdkmanager --install \
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+          echo "SDKMANAGER=$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" --install \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;27.2.12479018"
