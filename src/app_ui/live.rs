@@ -10,6 +10,7 @@
 use cranpose::prelude::*;
 
 use super::{reels, theme};
+use crate::app_diag;
 use crate::app_model::{self, Clip};
 
 /// The visible caveat: these are third-party, opt-in, unverified streams.
@@ -24,6 +25,8 @@ pub fn LiveSection() {
     let settled = state.settled_page();
     let page_count = app_model::LIVE_CHANNELS.len();
     let (news, uae) = category_counts(app_model::LIVE_CHANNELS);
+    // Refresh the inline error strip so background failures (HLS fetch, decoder
+    // open, route change) show up here without opening the Diagnostics tab.
     crate::app_diag::info(
         "live.gate",
         format!("settled page {settled} of {page_count}"),
@@ -46,6 +49,10 @@ pub fn LiveSection() {
                 );
                 Text(DISCLAIMER, Modifier::empty(), theme::accent_style());
                 Text(DISCLAIMER_DETAIL, Modifier::empty(), theme::muted_style());
+                // Owns its own refresh tick so a failure only recomposes this
+                // small strip, never the 42-page pager (which caused the drag
+                // to stutter when errors were polled at the section level).
+                live_error_strip();
                 VerticalPager(
                     Modifier::empty()
                         .fill_max_width()
@@ -66,6 +73,37 @@ pub fn LiveSection() {
             }
         },
     );
+}
+
+/// A compact, self-refreshing error strip inside the Live section. It owns its
+/// own tick, so polling background failures recomposes only this text and not
+/// the pager (which made dragging a channel stutter).
+#[composable]
+fn live_error_strip() {
+    let tick = rememberMutableStateOf(|| 0_u64);
+    LaunchedEffect((), async move |_| {
+        loop {
+            cranpose::prelude::delay(std::time::Duration::from_millis(600)).await;
+            tick.update(|value| *value += 1);
+        }
+    });
+    let mut errors: Vec<String> = {
+        let _ = tick.get();
+        app_diag::recent_lines()
+            .into_iter()
+            .filter(|line| line.contains("ERROR") || line.contains("PANIC"))
+            .collect()
+    };
+    if errors.len() > 2 {
+        errors.drain(..errors.len() - 2);
+    }
+    for line in errors.iter() {
+        Text(
+            line.clone(),
+            Modifier::empty().fill_max_width(),
+            theme::fail_style(),
+        );
+    }
 }
 
 /// A human-readable page indicator, kept pure for unit testing.
