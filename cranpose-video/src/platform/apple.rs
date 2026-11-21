@@ -216,26 +216,36 @@ impl Reader {
         let reader =
             unsafe { AVAssetReader::initWithAsset_error(AVAssetReader::alloc(), &self.asset) }
                 .map_err(|error| VideoError::Source(describe(&error)))?;
+        // `nil` output settings ask AVFoundation to vend the samples in the
+        // track's own format — the one decoder output it is guaranteed to have.
+        // Per Apple's AVAssetReaderTrackOutput docs, requesting a pixel format
+        // the track cannot produce makes init/canAddOutput fail. Asking for the
+        // original format is the universal fallback.
         let settings = settings(format);
         // SAFETY: the track belongs to the open asset, and the settings hold
         // only constant keys and an integer.
-        let output = unsafe {
+        let make_output = |settings: Option<Retained<NSDictionary<NSString, AnyObject>>>| unsafe {
             AVAssetReaderTrackOutput::initWithTrack_outputSettings(
                 AVAssetReaderTrackOutput::alloc(),
                 &self.track,
-                Some(&settings),
+                settings.as_ref(),
             )
         };
+        let output = make_output(Some(settings)).or_else(|| make_output(None));
         // SAFETY: the reader is open and the output is not attached yet.
-        let added = unsafe {
-            reader.addOutput(&output);
-            reader.canAddOutput(&output)
-        };
+        // `canAddOutput` must be consulted BEFORE `addOutput`: asking after the
+        // output is attached reports the wrong result and made valid tracks
+        // look refused.
+        let output = output.ok_or_else(|| {
+            VideoError::Decode("AVFoundation cannot create the video track output".to_owned())
+        })?;
+        let added = unsafe { reader.canAddOutput(&output) };
         if !added {
             return Err(VideoError::Decode(
                 "AVFoundation refused the video track output".to_owned(),
             ));
         }
+        unsafe { reader.addOutput(&output) };
         if position > Duration::ZERO {
             // SAFETY: the range states the position in the media's own time,
             // and the reader is not reading yet.

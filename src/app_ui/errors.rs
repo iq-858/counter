@@ -1,42 +1,54 @@
-//! On-screen error view.
+//! On-screen diagnostic view — a full timeline of what the app and library
+//! logged in the background.
 //!
-//! Background failures (decoder open, route change, HLS fetch, panic) used to
-//! be visible only in `diagnostics.log` — a file a phone user cannot open. This
-//! section mirrors the app's recent WARN/ERROR/PANIC lines into the UI so every
-//! failure that happens away from the screen is visible where the user is.
+//! Everything written to `app_diag` (decoder open/play/frame, route changes,
+//! session failures, HLS fetches, panics, and all library diagnostics through
+//! `set_diagnostic_sink`) is mirrored into an in-memory ring. A phone user cannot
+//! open `diagnostics.log` in the app sandbox, so this view is the only place a
+//! background failure is visible.
 
 use cranpose::prelude::*;
 
 use super::theme;
 use crate::app_diag;
 
-/// The error view, refreshed on a short cadence so background failures appear
-/// without a restart. Each read is just a locked snapshot of a 40-line ring.
+/// The diagnostic view, refreshed on a short cadence so background events
+/// appear without a restart. Each read is just a locked snapshot of a bounded
+/// ring, so a long session cannot grow without limit.
 #[composable]
 pub fn ErrorsSection() {
     let ticks = rememberMutableStateOf(|| 0_u64);
     LaunchedEffect((), async move |_| {
         loop {
-            cranpose::prelude::delay(std::time::Duration::from_millis(500)).await;
+            delay(std::time::Duration::from_millis(400)).await;
             ticks.update(|value| *value += 1);
         }
     });
     let _pump = ticks.get();
 
     let lines = app_diag::recent_lines();
+    let error_count = lines.iter().filter(|l| l.contains("ERROR") || l.contains("PANIC")).count();
+    let clear = {
+        move || app_diag::clear_screen()
+    };
     Column(
         Modifier::empty().fill_max_size().padding(12.0),
         ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
         move || {
-            Text("Background errors", Modifier::empty(), theme::heading_style());
+            Text("Diagnostics & errors", Modifier::empty(), theme::heading_style());
             Text(
-                format!("{} recent warning / error line(s)", lines.len()),
+                format!(
+                    "{} line(s) · {} error(s) — refreshes automatically",
+                    lines.len(),
+                    error_count
+                ),
                 Modifier::empty(),
                 theme::muted_style(),
             );
+            super::widgets::small_button("Clear", clear.clone());
             if lines.is_empty() {
                 Text(
-                    "No background errors yet. Open a clip or a live channel to exercise the decoder.",
+                    "No events yet. Open a clip or a live channel to exercise the decoder.",
                     Modifier::empty(),
                     theme::muted_style(),
                 );
@@ -45,7 +57,11 @@ pub fn ErrorsSection() {
                     Text(
                         line.clone(),
                         Modifier::empty().fill_max_width(),
-                        theme::muted_style(),
+                        if line.contains("ERROR") || line.contains("PANIC") {
+                            theme::accent_style()
+                        } else {
+                            theme::muted_style()
+                        },
                     );
                 }
             }

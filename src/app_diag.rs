@@ -26,7 +26,7 @@ static PATH: OnceLock<PathBuf> = OnceLock::new();
 /// background failures that a phone user would otherwise never see (the file
 /// log lives in a sandbox the user cannot open). Bounded so a long session
 /// cannot grow without limit.
-const SCREEN_CAP: usize = 40;
+const SCREEN_CAP: usize = 80;
 static SCREEN: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
 fn screen() -> &'static Mutex<Vec<String>> {
@@ -36,6 +36,13 @@ fn screen() -> &'static Mutex<Vec<String>> {
 /// Returns a snapshot of the most recent lines (oldest first) for the UI.
 pub(crate) fn recent_lines() -> Vec<String> {
     screen().lock().map(|lines| lines.clone()).unwrap_or_default()
+}
+
+/// Clears the on-screen history (the file log is never touched).
+pub(crate) fn clear_screen() {
+    if let Ok(mut lines) = screen().lock() {
+        lines.clear();
+    }
 }
 
 fn log_path() -> &'static PathBuf {
@@ -119,20 +126,21 @@ pub(crate) fn log(level: &str, target: &str, message: &str) {
         let _ = file.write_all(line.as_bytes());
         let _ = file.flush();
     }
-    // Mirror notable lines to the in-memory ring for the on-screen error view.
-    if matches!(level, "WARN" | "ERROR" | "PANIC") {
-        if let Ok(mut lines) = screen().lock() {
-            if lines.len() >= SCREEN_CAP {
-                lines.remove(0);
-            }
-            let short = format!(
-                "{} [{}] {}",
-                &timestamp()[11..23],
-                target,
-                message.replace('\n', " ")
-            );
-            lines.push(short);
+    // Mirror every line to the in-memory ring so the on-screen view is a full
+    // timeline, not just failures. The level prefix lets the UI colour errors.
+    // The file log above keeps the complete, unabridged record.
+    if let Ok(mut lines) = screen().lock() {
+        if lines.len() >= SCREEN_CAP {
+            lines.remove(0);
         }
+        let short = format!(
+            "{} {} [{}] {}",
+            &timestamp()[11..23],
+            level,
+            target,
+            message.replace('\n', " ")
+        );
+        lines.push(short);
     }
 }
 
