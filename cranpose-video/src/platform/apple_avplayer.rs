@@ -69,8 +69,9 @@ fn on_main<R: Send>(action: impl FnOnce(MainThreadMarker) -> R + Send) -> R {
 /// Apple documents HLS as an HTTP-delivered playlist + MPEG-TS segments; a raw
 /// joined `.ts` file is not a supported standalone `AVPlayerItem(url:)` source
 /// (it fails with "Cannot Open"). The original `.m3u8` URL is passed straight to
-/// AVPlayer, which handles the playlist, segments and adaptation itself. Audio
-/// is muted here because cranpose pairs the source's sound separately on iOS.
+/// AVPlayer, which handles the playlist, segments and adaptation itself. Its
+/// own audio track is the sole sound source (`carries_audio()` is true, so no
+/// second player is paired).
 pub(crate) struct AvPlayerDecoder {
     player: SendRetained<AVPlayer>,
     item: SendRetained<AVPlayerItem>,
@@ -210,6 +211,24 @@ impl crate::VideoDecoder for AvPlayerDecoder {
     }
 
     fn pause(&mut self) {
+        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
+        on_main(move |_| unsafe {
+            (&*(player_ptr as *const Retained<AVPlayer>)).pause();
+        });
+    }
+
+    fn play(&mut self) {
+        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
+        on_main(move |_| unsafe {
+            (&*(player_ptr as *const Retained<AVPlayer>)).play();
+        });
+    }
+
+    fn close(&mut self) {
+        // Stop AVPlayer's audio as soon as the worker unwinds. Without this the
+        // default no-op let the outgoing clip keep playing until ARC deallocated
+        // the player, which was the double-audio window on navigation.
+        self.shutdown.store(true, Ordering::Release);
         let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
         on_main(move |_| unsafe {
             (&*(player_ptr as *const Retained<AVPlayer>)).pause();
