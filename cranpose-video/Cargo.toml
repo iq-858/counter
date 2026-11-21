@@ -98,6 +98,14 @@ cpal = { version = "0.18.2", optional = true }
 # natural size, which is the same stack QuickTime and Safari use.
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "watchos"))'.dependencies]
 objc2 = "0.6"
+# AVAudioSession route changes (headset unplug / Bluetooth) on iOS are observed
+# here so the audio source can be re-attached without a manual stop/play.
+objc2-avf-audio = { version = "0.3", default-features = false, features = [
+    "std",
+    "AVAudioSession",
+    "AVAudioSessionTypes",
+] }
+block2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "NSArray",
@@ -108,6 +116,8 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSString",
     "NSURL",
     "NSValue",
+    "NSNotification",
+    "NSOperation",
 ] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = [
     "std",
@@ -138,7 +148,6 @@ objc2-core-foundation = { version = "0.3", default-features = false, features = 
     "std",
     "CFCGTypes",
 ] }
-block2 = "0.6"
 dispatch2 = "0.3"
 
 # MediaExtractor and MediaCodec are the Android framework's own demuxer and

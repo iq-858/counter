@@ -72,6 +72,16 @@ mod windows;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod apple;
 
+// AVPlayer-backed reader for HLS windows on iOS: AVAssetReader cannot read the
+// MPEG-TS fragments most live channels serve, but AVPlayer can.
+#[cfg(target_os = "ios")]
+mod apple_avplayer;
+
+// Observes AVAudioSession route changes so an unplugged headset re-attaches
+// audio automatically instead of needing a manual stop/play.
+#[cfg(target_os = "ios")]
+mod ios_route;
+
 #[cfg(target_os = "android")]
 mod android;
 
@@ -91,6 +101,26 @@ pub(crate) use linux::{NAME, SUPPORTED, open as open_native};
 pub(crate) use web::{NAME, SUPPORTED, open as open_native};
 #[cfg(target_os = "windows")]
 pub(crate) use windows::{NAME, SUPPORTED, open as open_native};
+
+/// Opens the file a joined HLS window was written to.
+///
+/// On iOS the fragments are usually MPEG-TS, which `AVAssetReader` cannot open;
+/// the AVPlayer-backed decoder reads them instead. Everywhere else the normal
+/// native decoder is used (Media Foundation reads TS, and fMP4 works with
+/// AVAssetReader on macOS).
+#[cfg(target_os = "ios")]
+pub(crate) fn open_hls_window(
+    path: &std::path::Path,
+) -> Result<Box<dyn crate::VideoDecoder>, crate::VideoError> {
+    Ok(Box::new(apple_avplayer::AvPlayerDecoder::open(path)?))
+}
+
+#[cfg(not(target_os = "ios"))]
+pub(crate) fn open_hls_window(
+    path: &std::path::Path,
+) -> Result<Box<dyn crate::VideoDecoder>, crate::VideoError> {
+    open_native(&crate::VideoSource::path(path))
+}
 
 /// The decoder a build without a platform backend reports.
 #[cfg(not(any(
@@ -123,6 +153,9 @@ use crate::{VideoDecoder, VideoError, VideoSource};
 /// as [`crate::hls`] does, and hands the platform the file it joined. The
 /// browser reads HLS in its own backend, which this router leaves alone.
 pub(crate) fn open(source: &VideoSource) -> Result<Box<dyn VideoDecoder>, VideoError> {
+    // Install the iOS audio-route observer once, before any player can open.
+    #[cfg(target_os = "ios")]
+    ios_route::install_route_observer();
     #[cfg(any(
         target_os = "windows",
         target_os = "android",

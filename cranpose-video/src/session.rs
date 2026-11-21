@@ -149,10 +149,22 @@ impl Default for PlaybackSession {
     }
 }
 
+/// Weak handles to every live session, so a platform route observer can arm a
+/// verification on all of them without the app having to track its player.
+/// Weak references mean a closed player is simply skipped.
+#[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+static LIVE_SESSIONS: std::sync::OnceLock<std::sync::Mutex<Vec<std::sync::Weak<SessionInner>>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+fn live_sessions() -> &'static std::sync::Mutex<Vec<std::sync::Weak<SessionInner>>> {
+    LIVE_SESSIONS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
 impl PlaybackSession {
     /// Starts a session in [`PlaybackState::Opening`].
     pub fn new() -> Self {
-        Self {
+        let session = Self {
             inner: Arc::new(SessionInner {
                 phase: std::sync::Mutex::new(Phase {
                     state: PlaybackState::Opening,
@@ -165,6 +177,26 @@ impl PlaybackSession {
                 generation: AtomicU64::new(0),
                 closed: AtomicBool::new(false),
             }),
+        };
+        #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+        live_sessions()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Arc::downgrade(&session.inner));
+        session
+    }
+
+    /// Arms one verification attempt on every live session. A platform audio
+    /// route observer (headset unplug, Bluetooth connect) calls this so each
+    /// player re-attaches its audio source without a manual stop/play.
+    #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+    pub fn route_changed_all() {
+        let mut live = live_sessions().lock().unwrap_or_else(|e| e.into_inner());
+        live.retain(|weak| weak.strong_count() > 0);
+        let sessions: Vec<_> = live.iter().filter_map(|weak| weak.upgrade()).collect();
+        drop(live);
+        for inner in sessions {
+            PlaybackSession { inner }.route_changed();
         }
     }
 

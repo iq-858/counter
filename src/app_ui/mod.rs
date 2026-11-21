@@ -124,6 +124,11 @@ fn section_tab(label: impl Into<String>, target: Section, current: MutableState<
         {
             let label = label.clone();
             move || {
+                // Clear the on-screen error ring on section change so a tab
+                // shows only its own failures, never stale ones from another
+                // section (e.g. an old Reels clip error in the Live tab). The
+                // file log keeps the complete history.
+                crate::app_diag::clear_screen();
                 crate::app_diag::info("nav", format!("switch to {label}"));
                 on_click.set(target);
             }

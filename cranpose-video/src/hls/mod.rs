@@ -244,6 +244,10 @@ struct Opened {
 
 /// A stream played from HLS by fetching its fragments.
 struct Stream {
+    /// The address the application opened. `choose` replaces `url` with the
+    /// chosen rendition, but a recovery must start from this original address
+    /// so an expired signed playlist can be re-resolved into fresh fragment URLs.
+    source_url: String,
     /// The media playlist, after a master playlist has chosen a rendition.
     url: String,
     /// Whether the address has been read and a rendition chosen. Opening the
@@ -350,6 +354,7 @@ impl Stream {
         // tolerates the empty segment list until `ensure_loaded` replaces it.
         let media = playlist::Media::empty();
         Self {
+            source_url: url.to_owned(),
             url: url.to_owned(),
             loaded: false,
             master: None,
@@ -621,7 +626,7 @@ impl Stream {
         let audio_file = self.open_audio_window(self.next, count).ok().flatten();
 
         let file = TempFile::write(&bytes)?;
-        let decoder = crate::platform::open_native(&VideoSource::path(file.path()))?;
+        let decoder = crate::platform::open_hls_window(file.path())?;
         // How long the window took, split from the playlist read above: a field
         // report about a slow start needs to say whether the network or the
         // decoder is the part that is slow.
@@ -1330,6 +1335,11 @@ impl VideoDecoder for Stream {
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
     fn recover(&mut self) -> bool {
         self.loaded = false;
+        // Start from the address the application opened, not the rendition URL
+        // stored by the last load: a signed playlist's fragment URLs expire, and
+        // re-requesting them only repeats the 403/410 forever. Re-read the
+        // original so `choose` can obtain fresh addresses.
+        self.url = self.source_url.clone();
         if let Some(mut window) = self.window.take() {
             window.decoder.close();
         }
@@ -2066,6 +2076,7 @@ mod tests {
             "#EXT-X-ENDLIST\n",
         );
         Stream {
+            source_url: url.to_owned(),
             url: url.to_owned(),
             loaded: true,
             master: None,

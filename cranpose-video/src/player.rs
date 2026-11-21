@@ -548,6 +548,25 @@ impl Shared {
         }
     }
 
+    /// Refreshes the live/seekable flags once the decoder has loaded its source.
+    ///
+    /// HLS learns these only after the playlist is fetched on the decode
+    /// thread, but `from_decoder` snapshots them at open, when the placeholder
+    /// still says `live=false, seekable=true`. Leaving that snapshot frozen made
+    /// the live-empty-window retry branch in the worker dead and let a live
+    /// stream end instead of recovering. Called from the first post-open frame,
+    /// where the real values are available.
+    #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+    pub(crate) fn adopt_capabilities(&self, live: bool, seekable: bool) {
+        let mut inner = self.inner.lock();
+        // Monotonic: a source that opens as live stays live (a decoder that does
+        // not report liveness returns the default false and must not turn a
+        // known live feed finite), and seekability can only be revoked once the
+        // playlist reveals a live stream — never granted to one that refused it.
+        inner.live |= live;
+        inner.seekable &= seekable;
+    }
+
     /// Records that the player was closed.
     pub(crate) fn emit_closed(&self) {
         self.emit_event(PlaybackEvent::Closed);
@@ -1184,6 +1203,19 @@ impl VideoPlayer {
     /// The volume of audio a backend carries, from 0.0 to 1.0.
     pub fn volume(&self) -> f32 {
         self.shared.volume()
+    }
+
+    /// Reports a system audio output route change to the recovery session.
+    ///
+    /// A host that observes `AVAudioSession.routeChangeNotification` (iOS) or
+    /// `AudioDeviceCallback` (Android) calls this when a headset is unplugged or
+    /// a Bluetooth device connects. It arms one bounded recovery so the decode
+    /// thread re-attaches the audio source — the same effect as a manual
+    /// stop/play, which is what a user otherwise has to do to get sound back.
+    /// No device query or stream work runs on this (the calling) thread.
+    #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+    pub fn note_route_changed(&self) {
+        self.shared.playback.route_changed();
     }
 
     /// The identity of this playback session.

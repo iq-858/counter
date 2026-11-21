@@ -515,6 +515,14 @@ impl Reader {
                             self.finished = true;
                             return Ok(None);
                         }
+                        // `Reading` (1) is a healthy reader that is still
+                        // working: empty/marker buffers are normal on many
+                        // tracks. Declaring a stuck stream here was a false
+                        // positive that killed valid local clips. Keep reading
+                        // and only fail on a genuine `Failed` (3) status.
+                        if status != AVAssetReaderStatus::Failed {
+                            continue;
+                        }
                         let reason = unsafe { playback.reader.error() }.map_or_else(
                             || {
                                 format!(

@@ -341,6 +341,14 @@ impl Worker {
             if self.shared.is_shutting_down() {
                 return false;
             }
+            // A decoder such as HLS learns live/seekable only after the playlist
+            // is fetched on the first read. Keep the shared snapshot current on
+            // every read so the live-empty-window retry gate sees the truth even
+            // when the stream fails before its first picture. Both accessors are
+            // cached field reads and the setter only writes two bools.
+            #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+            self.shared
+                .adopt_capabilities(self.decoder.is_live(), self.decoder.is_seekable());
             let native = !self.native_refused && self.decoder.output_format() == PixelFormat::Nv12;
             let mut buffer = std::mem::take(&mut self.scratch);
             let mut planes = std::mem::take(&mut self.planes);
