@@ -16,12 +16,11 @@
 )]
 
 use std::{
-    ptr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use dispatch2::DispatchQueue;
@@ -33,7 +32,7 @@ use objc2_core_video::{
     CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
     CVPixelBufferUnlockBaseAddress, kCVPixelBufferPixelFormatTypeKey,
 };
-use objc2_foundation::{NSDictionary, NSNotification, NSNumber, NSString, NSURL};
+use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
 
 use crate::{
     DecodedFrame, PixelFormat, VideoError, VideoInfo,
@@ -204,6 +203,16 @@ impl AvPlayerDecoder {
             player.currentTime()
         })
     }
+
+    /// Mute or restore this player's audio by volume, never by pausing: pausing
+    /// would stop the presentation clock and freeze the frame loop.
+    fn set_audible(&self, audible: bool) {
+        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
+        on_main(move |_| unsafe {
+            let player = &*(player_ptr as *const Retained<AVPlayer>);
+            player.setVolume(if audible { 1.0 } else { 0.0 });
+        });
+    }
 }
 
 impl crate::VideoDecoder for AvPlayerDecoder {
@@ -283,16 +292,6 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         Err(VideoError::UnsupportedOperation {
             operation: "seeking a live HLS window",
         })
-    }
-
-    /// Mute or restore this player's audio by volume, never by pausing: pausing
-    /// would stop the presentation clock and freeze the frame loop.
-    fn set_audible(&self, audible: bool) {
-        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
-        on_main(move |_| unsafe {
-            let player = &*(player_ptr as *const Retained<AVPlayer>);
-            player.setVolume(if audible { 1.0 } else { 0.0 });
-        });
     }
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {

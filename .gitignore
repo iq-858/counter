@@ -9,3 +9,5 @@ cap_*.txt
 .idea/
 .vscode/
 .agents/
+ios_build_failed_log.txt
+ios_github_build_2.json
