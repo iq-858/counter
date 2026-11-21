@@ -307,6 +307,7 @@ impl Worker {
             Command::SetSpeed(speed) => self.decoder.set_speed(speed),
             Command::SetMuted(muted) => self.decoder.set_muted(muted),
             Command::SetVolume(volume) => self.decoder.set_volume(volume),
+            Command::SetAudioGroup(group) => self.decoder.set_audio_group(group),
             Command::Stop => {
                 // A backend that owns a platform clock keeps it running until it
                 // is told to stop. Seeking alone only moves its media time.

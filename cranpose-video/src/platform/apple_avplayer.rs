@@ -19,7 +19,7 @@ use std::{
     ptr,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -39,6 +39,25 @@ use crate::{DecodedFrame, PixelFormat, VideoError, VideoInfo, pixels::bgra_to_rg
 
 const BGRA: u32 = 0x4247_5241;
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Per-group generation of the AVPlayer that currently owns that group's audio.
+/// Players in the default group (0) mute each other on navigation, which is what
+/// a Reels feed wants; a feed that plays two clips at once puts them in distinct
+/// groups via `VideoPlayer::set_audio_group`, so both keep their sound.
+static AUDIO_OWNERS: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeMap<u64, u64>>> =
+    std::sync::OnceLock::new();
+
+fn audio_owners() -> &'static std::sync::Mutex<std::collections::BTreeMap<u64, u64>> {
+    AUDIO_OWNERS.get_or_init(|| std::sync::Mutex::new(std::collections::BTreeMap::new()))
+}
+
+/// Claims the current generation for `group` and returns it.
+fn claim_audio(group: u64) -> u64 {
+    let mut owners = audio_owners().lock().unwrap_or_else(|e| e.into_inner());
+    let next = owners.get(&group).copied().unwrap_or(0).wrapping_add(1);
+    owners.insert(group, next);
+    next
+}
 
 /// A `Retained` that is safe to move to the decode thread. All its uses go
 /// through `on_main`, so no ObjC message is sent from the wrong thread.
@@ -79,6 +98,13 @@ pub(crate) struct AvPlayerDecoder {
     info: VideoInfo,
     /// Set by the worker's observe_shutdown so a buffering read can exit.
     shutdown: Arc<AtomicBool>,
+    /// The audio-owner generation this player was opened under. When it is no
+    /// longer current in its group, a newer player owns that group's sound and
+    /// this one stays muted.
+    owner: u64,
+    /// Audio group. Same-group players are mutually exclusive; different groups
+    /// may play at the same time.
+    group: u64,
 }
 
 impl AvPlayerDecoder {
@@ -169,12 +195,18 @@ impl AvPlayerDecoder {
             frame_rate: None,
             rotation: Default::default(),
         };
+        // Claim the audio output: every older AVPlayer will now see a stale
+        // generation and mute itself on its next read, so only this clip sounds.
+        let group = 0;
+        let owner = claim_audio(group);
         Ok(Self {
             player,
             item,
             output,
             info,
             shutdown: Arc::new(AtomicBool::new(false)),
+            owner,
+            group,
         })
     }
 
@@ -208,6 +240,13 @@ impl crate::VideoDecoder for AvPlayerDecoder {
 
     fn observe_shutdown(&mut self, flag: Arc<AtomicBool>) {
         self.shutdown = flag;
+    }
+
+    fn set_audio_group(&mut self, group: u64) {
+        // Re-claim ownership in the new group. If a newer player already owns
+        // it, read() will mute this one on its next call.
+        self.group = group;
+        self.owner = claim_audio(group);
     }
 
     fn pause(&mut self) {
@@ -250,6 +289,18 @@ impl crate::VideoDecoder for AvPlayerDecoder {
     }
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
+        // A newer AVPlayer owns the audio: mute this one so the outgoing clip
+        // does not play alongside the new one during a navigation. This is done
+        // inside the library, so the app needs no special cleanup.
+        let current = audio_owners()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&self.group)
+            .copied()
+            .unwrap_or(0);
+        if current != self.owner {
+            self.pause();
+        }
         let output_ptr = &self.output.0 as *const Retained<AVPlayerItemVideoOutput> as usize;
         // Block until a frame is ready or the worker signals shutdown. A live
         // HLS source buffers over HTTP; returning Ok(None) on a buffering gap

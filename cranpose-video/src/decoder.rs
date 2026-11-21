@@ -149,6 +149,16 @@ pub trait VideoDecoder: Send {
     /// The default is a no-op; see [`set_muted`](Self::set_muted).
     fn set_volume(&mut self, _volume: f32) {}
 
+    /// Assigns this player's audio group. Players in the same group are
+    /// mutually exclusive: when a newer one starts, the older ones mute so a
+    /// feed never plays two clips at once. Players in different groups keep
+    /// their own sound and may play together.
+    ///
+    /// The default (group 0) gives the common single-active-player feed. An app
+    /// that deliberately plays two clips with sound puts them in distinct
+    /// groups. The default is a no-op for decoders without this notion.
+    fn set_audio_group(&mut self, _group: u64) {}
+
     /// Whether the backend currently plays no sound.
     ///
     /// The player reads this once when it opens, so a browser that starts an

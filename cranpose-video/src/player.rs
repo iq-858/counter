@@ -76,6 +76,8 @@ pub(crate) enum Command {
     SetMuted(bool),
     /// Set the volume of audio a backend carries itself, from 0.0 to 1.0.
     SetVolume(f32),
+    /// Assign the audio group (same group = mutually exclusive sound).
+    SetAudioGroup(u64),
     /// The player is going away.
     Shutdown,
 }
@@ -1212,6 +1214,22 @@ impl VideoPlayer {
     /// The volume of audio a backend carries, from 0.0 to 1.0.
     pub fn volume(&self) -> f32 {
         self.shared.volume()
+    }
+
+    /// Assigns this player's audio group.
+    ///
+    /// Players in the same group are mutually exclusive: opening a newer one
+    /// automatically mutes the older ones, so a feed never plays two clips at
+    /// once. Players in different groups keep their sound and can play together.
+    /// The default group is 0, which is right for a single-active-player feed.
+    /// Call this before or after opening; it takes effect on the decode thread.
+    ///
+    /// # Errors
+    ///
+    /// Fails with [`VideoError::Closed`] after [`close`](Self::close).
+    pub fn set_audio_group(&self, group: u64) -> Result<(), VideoError> {
+        self.check()?;
+        self.engine.dispatch(Command::SetAudioGroup(group))
     }
 
     /// Reports a system audio output route change to the recovery session.
