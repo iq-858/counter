@@ -20,7 +20,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use dispatch2::DispatchQueue;
@@ -41,7 +41,6 @@ use crate::{
 };
 
 const BGRA: u32 = 0x4247_5241;
-const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A `Retained` that is safe to move to the decode thread. All its uses go
 /// through `on_main`, so no ObjC message is sent from the wrong thread.
@@ -144,29 +143,14 @@ impl AvPlayerDecoder {
         });
         let (player, item, output) = setup.map_err(VideoError::Decode)?;
 
-        // Wait for the item to become ready on the main thread. The closures
-        // borrow the item through a raw pointer so the SendRetained wrapper is
-        // not consumed; every call still runs on the main queue.
+        // Do NOT wait for `ReadyToPlay` here. `open_url` runs on the
+        // composition thread (rememberVideoPlayer -> VideoPlayer::open), and a
+        // synchronous wait — even with 20 ms sleeps — blocks the main queue
+        // AVPlayer needs to load the playlist. That froze the Live pager on
+        // every channel switch. `read()` now checks the item status on the
+        // decode worker and returns a clear error if the item fails, while the
+        // player adopts the real size from the first frame.
         let item_ptr = &item as *const SendRetained<AVPlayerItem> as usize;
-        let began = Instant::now();
-        while began.elapsed() < READY_TIMEOUT {
-            let status = on_main(move |_| unsafe {
-                (&*(item_ptr as *const SendRetained<AVPlayerItem>)).status()
-            });
-            if status == AVPlayerItemStatus::ReadyToPlay {
-                break;
-            }
-            if status == AVPlayerItemStatus::Failed {
-                let msg = on_main(move |_| unsafe {
-                    (&*(item_ptr as *const SendRetained<AVPlayerItem>))
-                        .error()
-                        .map(|e| e.localizedDescription().to_string())
-                        .unwrap_or_else(|| "AVPlayer could not open the media".to_owned())
-                });
-                return Err(VideoError::Decode(msg));
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
         let size = on_main(move |_| unsafe {
             (&*(item_ptr as *const SendRetained<AVPlayerItem>))
                 .asset()
@@ -296,6 +280,7 @@ impl crate::VideoDecoder for AvPlayerDecoder {
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
         let output_ptr = &self.output.0 as *const Retained<AVPlayerItemVideoOutput> as usize;
+        let item_ptr = &self.item.0 as *const Retained<AVPlayerItem> as usize;
         // Block until a frame is ready or the worker signals shutdown. A live
         // HLS source buffers over HTTP; returning Ok(None) on a buffering gap
         // is read by the worker as end-of-media and triggers the recovery cycle
@@ -303,6 +288,7 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         // pending through normal buffering removes that cycle.
         let mut found: Option<CMTime> = None;
         let mut audible = true;
+        let mut polls = 0_u32;
         while !self.shutdown.load(Ordering::Acquire) {
             // Re-check audio ownership every poll. A newer player claiming this
             // group mutes us immediately, and regaining ownership un-mutes us,
@@ -311,6 +297,25 @@ impl crate::VideoDecoder for AvPlayerDecoder {
             if should_be_audible != audible {
                 self.set_audible(should_be_audible);
                 audible = should_be_audible;
+            }
+            // `open_url` no longer blocks the composition thread waiting for
+            // readiness, so a failed item must still produce a clear error here
+            // instead of an endless Loading state. Check periodically on the
+            // decode worker (never on the composition thread).
+            polls = polls.wrapping_add(1);
+            if polls % 10 == 0 {
+                let status = on_main(move |_| unsafe {
+                    (&*(item_ptr as *const Retained<AVPlayerItem>)).status()
+                });
+                if status == AVPlayerItemStatus::Failed {
+                    let message = on_main(move |_| unsafe {
+                        (&*(item_ptr as *const Retained<AVPlayerItem>))
+                            .error()
+                            .map(|error| error.localizedDescription().to_string())
+                            .unwrap_or_else(|| "AVPlayer could not open the media".to_owned())
+                    });
+                    return Err(VideoError::Decode(message));
+                }
             }
             // Recompute the item time each poll: a single value held across a
             // long wait goes stale and keeps missing the moving play head.
