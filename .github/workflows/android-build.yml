@@ -1,0 +1,90 @@
+name: Build Android APK
+
+# GitHub-hosted Linux runner: builds Counter's Rust cdylib through the Cranpose
+# Gradle plugin, signs it with a freshly generated release key and uploads both
+# the installable APK and the keystore that signed it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: counter-android-apk
+  cancel-in-progress: true
+
+env:
+  COUNTER_STORE_PASSWORD: counter123
+  COUNTER_KEY_PASSWORD: counter123
+  COUNTER_KEY_ALIAS: counter
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust Android targets
+        run: rustup target add aarch64-linux-android x86_64-linux-android
+
+      - name: Install cargo-ndk (used by the Cranpose Gradle plugin)
+        run: cargo install cargo-ndk --locked
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages and NDK
+        run: |
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      - name: Generate release signing keystore
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/android/keystore"
+          keytool -genkeypair -v \
+            -keystore "$GITHUB_WORKSPACE/android/keystore/counter-release.jks" \
+            -storetype PKCS12 \
+            -alias "$COUNTER_KEY_ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$COUNTER_STORE_PASSWORD" \
+            -keypass "$COUNTER_KEY_PASSWORD" \
+            -dname "CN=Counter, OU=Counter, O=Counter, L=Unknown, ST=Unknown, C=US"
+          echo "COUNTER_KEYSTORE_FILE=$GITHUB_WORKSPACE/android/keystore/counter-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        working-directory: android
+        run: ./gradlew --no-daemon :app:assembleRelease
+
+      - name: Verify APK is signed
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -n 1)
+          echo "APK=$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-signed-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload signing keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-release-keystore
+          path: android/keystore/counter-release.jks
+          if-no-files-found: error
