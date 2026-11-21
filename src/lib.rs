@@ -39,8 +39,12 @@ pub fn launch() -> AppLauncher {
     launcher
 }
 
-/// Runs the application. The desktop `main.rs` uses this on every target,
-/// including iOS where `main` is the launcher entry point.
+/// Runs the application. The desktop `main.rs` uses this on desktop and iOS.
+///
+/// On Android the `android_main!` macro below is the entry point and
+/// `AppLauncher` exposes `run(app, content)` (not `try_run`) there, so this
+/// helper is compiled out for that target.
+#[cfg(not(target_os = "android"))]
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     init_diagnostics();
     let result = launch().try_run(app_ui::AppRoot);

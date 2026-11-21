@@ -12,5 +12,14 @@
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    counter::run()
+    // Android enters through the `android_main!` macro in lib.rs; the shared
+    // `run()` helper is compiled out there.
+    #[cfg(not(target_os = "android"))]
+    {
+        counter::run()
+    }
+    #[cfg(target_os = "android")]
+    {
+        Ok(())
+    }
 }
