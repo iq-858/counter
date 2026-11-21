@@ -70,9 +70,9 @@ impl AvPlayerDecoder {
         let path = path.to_path_buf();
         let setup: Result<
             (
-                Retained<AVPlayer>,
-                Retained<AVPlayerItem>,
-                Retained<AVPlayerItemVideoOutput>,
+                SendRetained<AVPlayer>,
+                SendRetained<AVPlayerItem>,
+                SendRetained<AVPlayerItemVideoOutput>,
             ),
             String,
         > = on_main(move |mtm| {
@@ -87,26 +87,36 @@ impl AvPlayerDecoder {
                 NSDictionary::from_slices(&[key], &[value]);
             let output = unsafe {
                 AVPlayerItemVideoOutput::initWithPixelBufferAttributes(
-                    AVPlayerItemVideoOutput::alloc(mtm),
+                    AVPlayerItemVideoOutput::alloc(),
                     Some(settings.as_ref()),
                 )
             };
             unsafe { item.addOutput(&output) };
             unsafe { player.play() };
-            Ok((player, item, output))
+            Ok((
+                SendRetained(player),
+                SendRetained(item),
+                SendRetained(output),
+            ))
         });
         let (player, item, output) = setup.map_err(VideoError::Decode)?;
 
-        // Wait for the item to become ready on the main thread.
+        // Wait for the item to become ready on the main thread. The closures
+        // borrow the item through a raw pointer so the SendRetained wrapper is
+        // not consumed; every call still runs on the main queue.
+        let item_ptr = &item as *const SendRetained<AVPlayerItem> as usize;
         let began = Instant::now();
         while began.elapsed() < READY_TIMEOUT {
-            let status = on_main(move |_| unsafe { item.status() });
+            let status = on_main(move |_| unsafe {
+                (&*(item_ptr as *const SendRetained<AVPlayerItem>)).status()
+            });
             if status == AVPlayerItemStatus::ReadyToPlay {
                 break;
             }
             if status == AVPlayerItemStatus::Failed {
-                let msg = on_main(move |_| {
-                    unsafe { item.error() }
+                let msg = on_main(move |_| unsafe {
+                    (&*(item_ptr as *const SendRetained<AVPlayerItem>))
+                        .error()
                         .map(|e| e.localizedDescription().to_string())
                         .unwrap_or_else(|| "AVPlayer could not open the media".to_owned())
                 });
@@ -114,7 +124,11 @@ impl AvPlayerDecoder {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        let size = on_main(move |_| unsafe { item.asset().naturalSize() });
+        let size = on_main(move |_| unsafe {
+            (&*(item_ptr as *const SendRetained<AVPlayerItem>))
+                .asset()
+                .naturalSize()
+        });
         let info = VideoInfo {
             width: size.width.round().max(0.0) as u32,
             height: size.height.round().max(0.0) as u32,
@@ -123,9 +137,9 @@ impl AvPlayerDecoder {
             rotation: Default::default(),
         };
         Ok(Self {
-            player: SendRetained(player),
-            item: SendRetained(item),
-            output: SendRetained(output),
+            player,
+            item,
+            output,
             info,
             started: Instant::now(),
             first_pts: None,
