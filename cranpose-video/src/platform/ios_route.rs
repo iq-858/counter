@@ -14,7 +14,7 @@
 
 use std::ptr::NonNull;
 
-use block2::DynBlock;
+use block2::RcBlock;
 use objc2::runtime::AnyObject;
 use objc2_avf_audio::AVAudioSessionRouteChangeNotification;
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
@@ -25,7 +25,7 @@ pub(crate) fn install_route_observer() {
         let Some(name) = (unsafe { AVAudioSessionRouteChangeNotification }) else {
             return;
         };
-        let block = DynBlock::new(|_: NonNull<NSNotification>| {
+        let block = RcBlock::new(|_: NonNull<NSNotification>| {
             crate::session::PlaybackSession::route_changed_all();
         });
         unsafe {

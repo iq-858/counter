@@ -1,100 +1,122 @@
-//! AVPlayer-backed decoder for media that `AVAssetReader` cannot read.
+//! AVPlayer-backed decoder for media `AVAssetReader` cannot read (MPEG-TS).
 //!
-//! `AVAssetReader` opens QuickTime/MP4 files but not MPEG-TS, which is what
-//! most live HLS channels serve. AVFoundation's playback stack (`AVPlayer`)
-//! does read TS (and HLS) through `AVPlayerItemVideoOutput`. This module is the
-//! narrow bridge: it plays one joined file and hands decoded BGRA frames to the
-//! crate's RGBA path. The local-file decoder in `apple.rs` is unchanged, so
-//! offline clips keep the proven reader path.
-//!
-//! Everything here runs on the decode thread. `AVPlayer` drives its own internal
-//! machinery; this decoder only polls `hasNewPixelBufferForItemTime` and copies
-//! the pixel buffer, so no run loop or UI-thread work is needed.
+//! AVPlayer and AVPlayerItem are main-thread-only in objc2. Creation and frame
+//! extraction are dispatched to the main queue with `dispatch2`, mirroring
+//! Cranpose's own iOS media player. The objects are held in `SendRetained`
+//! wrappers so the decoder can travel to the crate's decode thread; every
+//! method call still hops back to the main thread.
 
 #![expect(
     unsafe_code,
-    reason = "AVFoundation is an Objective-C framework; every call crosses an FFI boundary"
+    reason = "AVFoundation is Objective-C; every call crosses an FFI boundary"
 )]
 #![allow(
     deprecated,
     reason = "the synchronous item/status accessors are the only ones usable without a run loop"
 )]
 
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::{
+    path::Path,
+    ptr,
+    time::{Duration, Instant},
+};
 
-use objc2::{AllocAnyThread, rc::Retained, runtime::AnyObject};
+use dispatch2::DispatchQueue;
+use objc2::{MainThreadMarker, rc::Retained, runtime::AnyObject};
 use objc2_av_foundation::{AVPlayer, AVPlayerItem, AVPlayerItemStatus, AVPlayerItemVideoOutput};
-use objc2_core_foundation::CMTime;
+use objc2_core_media::{CMTime, CMTimeMake};
 use objc2_core_video::{
     CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight,
     CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
     CVPixelBufferUnlockBaseAddress, kCVPixelBufferPixelFormatTypeKey,
 };
-use objc2_foundation::{NSDictionary, NSNumber, NSString, NSURL};
+use objc2_foundation::{NSDictionary, NSNotification, NSNumber, NSString, NSURL};
 
 use crate::{DecodedFrame, PixelFormat, VideoError, VideoInfo, pixels::bgra_to_rgba};
 
-/// The four-character code for 32-bit BGRA.
 const BGRA: u32 = 0x4247_5241;
-/// How long to wait for the item to become ready before reporting an error.
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A decoder that plays a file through AVPlayer and reads its frames.
+/// A `Retained` that is safe to move to the decode thread. All its uses go
+/// through `on_main`, so no ObjC message is sent from the wrong thread.
+struct SendRetained<T: ?Sized>(Retained<T>);
+unsafe impl<T: ?Sized> Send for SendRetained<T> {}
+unsafe impl<T: ?Sized> Sync for SendRetained<T> {}
+
+fn on_main<R: Send>(action: impl FnOnce(MainThreadMarker) -> R + Send) -> R {
+    if let Some(mtm) = MainThreadMarker::new() {
+        return action(mtm);
+    }
+    let mut landed = None;
+    DispatchQueue::main().exec_sync(|| {
+        let mtm = MainThreadMarker::new().expect("the main queue is the main thread");
+        landed = Some(action(mtm));
+    });
+    landed.expect("the main queue ran the action")
+}
+
+/// A decoder that plays a joined HLS window through AVPlayer and reads BGRA.
 pub(crate) struct AvPlayerDecoder {
-    _player: Retained<AVPlayer>,
-    item: Retained<AVPlayerItem>,
-    output: Retained<AVPlayerItemVideoOutput>,
+    player: SendRetained<AVPlayer>,
+    item: SendRetained<AVPlayerItem>,
+    output: SendRetained<AVPlayerItemVideoOutput>,
     info: VideoInfo,
     started: Instant,
     first_pts: Option<Duration>,
 }
 
 impl AvPlayerDecoder {
-    /// Opens a joined HLS window file through the AVPlayer playback stack.
     pub(crate) fn open(path: &Path) -> Result<Self, VideoError> {
-        // The caller's `TempFile` owns the path for at least as long as this
-        // decoder, so holding only the URL is enough; macOS/iOS AVPlayer keeps
-        // its own file handle while the item is live.
-        let url = NSURL::from_file_path(path).map_err(|_| {
+        let path = path.to_path_buf();
+        let url_result: Option<Retained<NSURL>> = on_main(move |_mtm| NSURL::from_file_path(&path));
+        let url = url_result.ok_or_else(|| {
             VideoError::Decode("the joined HLS window path is not a file URL".to_owned())
         })?;
-        let item = unsafe { AVPlayerItem::initWithURL(AVPlayerItem::alloc(), &url) };
-        let player = unsafe { AVPlayer::initWithPlayerItem(AVPlayer::alloc(), &item) };
+        let setup: Result<
+            (
+                Retained<AVPlayer>,
+                Retained<AVPlayerItem>,
+                Retained<AVPlayerItemVideoOutput>,
+            ),
+            String,
+        > = on_main(move |mtm| {
+            let item = unsafe { AVPlayerItem::initWithURL(AVPlayerItem::alloc(mtm), &url) };
+            let player = unsafe { AVPlayer::initWithPlayerItem(AVPlayer::alloc(mtm), Some(&item)) };
+            let key: &NSString =
+                unsafe { &*(kCVPixelBufferPixelFormatTypeKey as *const _ as *const NSString) };
+            let value: &AnyObject = &NSNumber::new_u32(BGRA);
+            let settings: Retained<NSDictionary<NSString, AnyObject>> =
+                NSDictionary::from_slices(&[key], &[value]);
+            let output = unsafe {
+                AVPlayerItemVideoOutput::initWithPixelBufferAttributes(
+                    AVPlayerItemVideoOutput::alloc(mtm),
+                    Some(settings.as_ref()),
+                )
+            };
+            unsafe { item.addOutput(&output) };
+            unsafe { player.play() };
+            Ok((player, item, output))
+        });
+        let (player, item, output) = setup.map_err(VideoError::Decode)?;
 
-        // Ask for BGRA: one conversion, on this thread, into the crate's RGBA.
-        let key: &NSString =
-            unsafe { &*(kCVPixelBufferPixelFormatTypeKey as *const _ as *const NSString) };
-        let value: &AnyObject = &NSNumber::new_u32(BGRA);
-        let settings: Retained<NSDictionary<NSString, AnyObject>> =
-            NSDictionary::from_slices(&[key], &[value]);
-        let output = unsafe {
-            AVPlayerItemVideoOutput::initWithPixelBufferAttributes(
-                AVPlayerItemVideoOutput::alloc(),
-                Some(settings.as_ref()),
-            )
-        };
-        unsafe { item.addOutput(&output) };
-        unsafe { player.play() };
-
-        // AVFoundation reports the natural size after the item becomes ready.
-        // Until then the player shows Loading; a short wait keeps a bad file
-        // from blocking the decode thread indefinitely.
+        // Wait for the item to become ready on the main thread.
         let began = Instant::now();
         while began.elapsed() < READY_TIMEOUT {
-            let status = unsafe { item.status() };
+            let status = on_main(move |_| unsafe { item.status() });
             if status == AVPlayerItemStatus::ReadyToPlay {
                 break;
             }
             if status == AVPlayerItemStatus::Failed {
-                let reason = unsafe { item.error() }
-                    .map(|error| error.localizedDescription().to_string())
-                    .unwrap_or_else(|| "AVPlayer could not open the media".to_owned());
-                return Err(VideoError::Decode(reason));
+                let msg = on_main(move |_| {
+                    unsafe { item.error() }
+                        .map(|e| e.localizedDescription().to_string())
+                        .unwrap_or_else(|| "AVPlayer could not open the media".to_owned())
+                });
+                return Err(VideoError::Decode(msg));
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        let size = unsafe { item.asset().naturalSize() };
+        let size = on_main(move |_| unsafe { item.asset().naturalSize() });
         let info = VideoInfo {
             width: size.width.round().max(0.0) as u32,
             height: size.height.round().max(0.0) as u32,
@@ -103,20 +125,18 @@ impl AvPlayerDecoder {
             rotation: Default::default(),
         };
         Ok(Self {
-            _player: player,
-            item,
-            output,
+            player: SendRetained(player),
+            item: SendRetained(item),
+            output: SendRetained(output),
             info,
             started: Instant::now(),
             first_pts: None,
         })
     }
 
-    /// The item time for "now", which tracks wall time since playback began.
     fn item_time(&self) -> CMTime {
-        use objc2_core_media::CMTimeMake;
         let elapsed = self.started.elapsed();
-        CMTimeMake(elapsed.as_secs() as i64 * 1_000_000, 1_000_000)
+        unsafe { CMTimeMake(elapsed.as_secs() as i64 * 1_000_000, 1_000_000) }
     }
 }
 
@@ -137,8 +157,7 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         false
     }
 
-    fn seek(&mut self, position: Duration) -> Result<(), VideoError> {
-        let _ = position;
+    fn seek(&mut self, _position: Duration) -> Result<(), VideoError> {
         Err(VideoError::UnsupportedOperation {
             operation: "seeking a live HLS window",
         })
@@ -146,25 +165,32 @@ impl crate::VideoDecoder for AvPlayerDecoder {
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
         let time = self.item_time();
-        // Wait briefly for a frame to become available at the current time.
+        let output_ptr = &self.output.0 as *const Retained<AVPlayerItemVideoOutput> as usize;
         let deadline = Instant::now() + Duration::from_millis(100);
-        loop {
-            if unsafe { self.output.hasNewPixelBufferForItemTime(time) } {
+        let mut got_frame = false;
+        while Instant::now() < deadline {
+            let has = on_main(move |_| unsafe {
+                let out = &*(output_ptr as *const Retained<AVPlayerItemVideoOutput>);
+                out.hasNewPixelBufferForItemTime(time)
+            });
+            if has {
+                got_frame = true;
                 break;
-            }
-            if Instant::now() >= deadline {
-                return Ok(None);
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        let Some(buffer) = (unsafe {
-            self.output
-                .copyPixelBufferForItemTime_itemTimeForDisplay(time, std::ptr::null_mut())
-        }) else {
+        if !got_frame {
+            return Ok(None);
+        }
+        let buffer = on_main(move |_| unsafe {
+            let out = &*(output_ptr as *const Retained<AVPlayerItemVideoOutput>);
+            out.copyPixelBufferForItemTime_itemTimeForDisplay(time, ptr::null_mut())
+        });
+        let Some(buffer) = buffer else {
             return Ok(None);
         };
-        let flags = CVPixelBufferLockFlags::ReadOnly;
-        if unsafe { CVPixelBufferLockBaseAddress(&buffer, flags) } != 0 {
+        let lock_flags = CVPixelBufferLockFlags::ReadOnly;
+        if unsafe { CVPixelBufferLockBaseAddress(&buffer, lock_flags) } != 0 {
             return Ok(None);
         }
         let width = unsafe { CVPixelBufferGetWidth(&buffer) } as u32;
@@ -178,8 +204,8 @@ impl crate::VideoDecoder for AvPlayerDecoder {
                 rgba.resize(needed, 0);
             }
             for y in 0..height as usize {
-                let source = unsafe { std::slice::from_raw_parts(base.add(y * stride), row) };
-                bgra_to_rgba(source, &mut rgba[y * row..][..row]);
+                let src = unsafe { std::slice::from_raw_parts(base.add(y * stride), row) };
+                bgra_to_rgba(src, &mut rgba[y * row..][..row]);
             }
             let pts = self.first_pts.unwrap_or(Duration::ZERO);
             self.first_pts = Some(pts + Duration::from_millis(33));
@@ -187,7 +213,7 @@ impl crate::VideoDecoder for AvPlayerDecoder {
         } else {
             None
         };
-        unsafe { CVPixelBufferUnlockBaseAddress(&buffer, flags) };
+        unsafe { CVPixelBufferUnlockBaseAddress(&buffer, lock_flags) };
         Ok(result)
     }
 }
