@@ -860,12 +860,21 @@ impl VideoPlayer {
             all(target_os = "linux", feature = "linux-gstreamer")
         ))]
         {
-            if source.as_url().is_none() {
+            let Some(url) = source.as_url() else {
                 return Err(VideoError::UnsupportedOperation {
                     operation: "opening an HLS source that is not a URL",
                 });
+            };
+            // On iOS the original playlist goes straight to AVPlayer: the
+            // in-crate HLS demuxer produces a local .ts that AVFoundation
+            // cannot open as a standalone file.
+            #[cfg(target_os = "ios")]
+            return Self::from_decoder(crate::platform::open_hls_direct(url)?);
+            #[cfg(not(target_os = "ios"))]
+            {
+                let _ = url;
+                return Self::from_decoder(crate::hls::open(&source)?);
             }
-            return Self::from_decoder(crate::hls::open(&source)?);
         }
         #[cfg(not(any(
             target_os = "windows",

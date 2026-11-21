@@ -112,7 +112,19 @@ pub(crate) use windows::{NAME, SUPPORTED, open as open_native};
 pub(crate) fn open_hls_window(
     path: &std::path::Path,
 ) -> Result<Box<dyn crate::VideoDecoder>, crate::VideoError> {
-    Ok(Box::new(apple_avplayer::AvPlayerDecoder::open(path)?))
+    Ok(Box::new(apple_avplayer::AvPlayerDecoder::open_file(path)?))
+}
+
+/// On iOS an HLS source is handed to AVPlayer as its original playlist URL.
+/// A joined local `.ts` cannot be opened by AVPlayerItem; Apple documents HLS
+/// as an HTTP-delivered index, which AVPlayer reads and adapts on its own.
+#[cfg(target_os = "ios")]
+pub(crate) fn open_hls_direct(
+    address: &str,
+) -> Result<Box<dyn crate::VideoDecoder>, crate::VideoError> {
+    Ok(Box::new(apple_avplayer::AvPlayerDecoder::open_url(
+        address,
+    )?))
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -164,6 +176,13 @@ pub(crate) fn open(source: &VideoSource) -> Result<Box<dyn VideoDecoder>, VideoE
         all(target_os = "linux", feature = "linux-gstreamer")
     ))]
     if SUPPORTED && source.is_hls() {
+        // On iOS, hand the playlist URL straight to AVPlayer. The in-crate HLS
+        // demuxer joins segments into a local .ts, which AVFoundation cannot
+        // open as a standalone file (NSError "Cannot Open").
+        #[cfg(target_os = "ios")]
+        if let Some(url) = source.as_url() {
+            return open_hls_direct(url);
+        }
         return crate::hls::open(source);
     }
     open_native(source)

@@ -338,6 +338,10 @@ struct Stream {
     /// recovery attempt, so one failure is reported at most once per attempt.
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
     reported_failure: Option<(u64, &'static str)>,
+    /// Set when the address answered with a permanent status (403/410). Such a
+    /// source will not recover by re-reading the playlist, so recovery must stop
+    /// instead of reloading it forever and flooding the log.
+    permanent_failure: bool,
 }
 
 impl Stream {
@@ -406,6 +410,7 @@ impl Stream {
             session: None,
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             reported_failure: None,
+            permanent_failure: false,
         }
     }
 
@@ -588,7 +593,24 @@ impl Stream {
 
         let mut bytes = Vec::new();
         if let Some(map) = self.media.map.clone() {
-            bytes.extend_from_slice(&init_bytes(&mut self.init, &map, &self.stop)?);
+            match init_bytes(&mut self.init, &map, &self.stop) {
+                Ok(init) => bytes.extend_from_slice(&init),
+                Err(error) => {
+                    diag(
+                        "ERROR",
+                        "hls.stage",
+                        &format!(
+                            "init section failed at index {} ({}/{} segments, live={}): {}",
+                            self.next,
+                            count,
+                            self.media.segments.len(),
+                            self.live,
+                            error
+                        ),
+                    );
+                    return Err(error);
+                }
+            }
         }
         // Fetch the fragments together so a window's network time is the
         // slowest segment, not their sum. Bytes the background prefetch already
@@ -596,7 +618,24 @@ impl Stream {
         // parallel. The work queue is bounded, so a long window never opens
         // more connections than the host can reuse.
         let segments: Vec<Segment> = self.media.segments[self.next..end].to_vec();
-        let fragments = self.fetch_window(&segments)?;
+        let fragments = match self.fetch_window(&segments) {
+            Ok(fragments) => fragments,
+            Err(error) => {
+                diag(
+                    "ERROR",
+                    "hls.stage",
+                    &format!(
+                        "fragment fetch failed at index {} ({}/{} segments, live={}): {}",
+                        self.next,
+                        count,
+                        self.media.segments.len(),
+                        self.live,
+                        error
+                    ),
+                );
+                return Err(error);
+            }
+        };
         // One base per track, captured from the first fragment. Video and audio
         // state their times in different timescales, so a single delta applied
         // to both would start them at different instants and drift. Rebasing is
@@ -1334,6 +1373,10 @@ impl VideoDecoder for Stream {
     /// session directly — the worker owns that transition.
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
     fn recover(&mut self) -> bool {
+        if self.permanent_failure {
+            // The address itself is unusable. Do not reload it again.
+            return false;
+        }
         self.loaded = false;
         // Start from the address the application opened, not the rendition URL
         // stored by the last load: a signed playlist's fragment URLs expire, and
@@ -1363,6 +1406,17 @@ impl VideoDecoder for Stream {
 }
 
 impl Stream {
+    /// A 403/410 address is dead: reloading the playlist cannot revive it, and
+    /// retrying only floods the log with "permanent failure" lines. Remember it
+    /// so recovery stops and the public failure stays truthful until the user
+    /// picks another channel.
+    fn note_failure(&mut self, error: &VideoError) {
+        let text = error.to_string();
+        if text.contains("answered 403") || text.contains("answered 410") {
+            self.permanent_failure = true;
+        }
+    }
+
     /// Reports an HLS failure once per recovery generation.
     ///
     /// One failed read can surface through several layers, but the session's
@@ -1402,7 +1456,13 @@ impl Stream {
         if let Err(error) = self.ensure_loaded() {
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             self.report_failure("hls.open", &error.to_string());
-            return Err(error);
+            self.note_failure(&error);
+            // A permanent status must not re-arm the recovery loop forever.
+            return if self.permanent_failure {
+                Err(VideoError::Decode(error.to_string()))
+            } else {
+                Err(error)
+            };
         }
         loop {
             if self.shutting_down() {
@@ -1416,7 +1476,12 @@ impl Stream {
                     }
                     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
                     self.report_failure("hls.window", &error.to_string());
-                    return Err(error);
+                    self.note_failure(&error);
+                    return if self.permanent_failure {
+                        Err(VideoError::Decode(error.to_string()))
+                    } else {
+                        Err(error)
+                    };
                 }
             }
             #[cfg(feature = "native-audio")]
@@ -2126,6 +2191,7 @@ mod tests {
             session: None,
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             reported_failure: None,
+            permanent_failure: false,
         }
     }
 

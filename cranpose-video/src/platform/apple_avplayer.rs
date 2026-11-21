@@ -16,7 +16,6 @@
 )]
 
 use std::{
-    path::Path,
     ptr,
     time::{Duration, Instant},
 };
@@ -24,7 +23,7 @@ use std::{
 use dispatch2::DispatchQueue;
 use objc2::{AnyThread, MainThreadMarker, MainThreadOnly, rc::Retained, runtime::AnyObject};
 use objc2_av_foundation::{AVPlayer, AVPlayerItem, AVPlayerItemStatus, AVPlayerItemVideoOutput};
-use objc2_core_media::{CMTime, CMTimeMake};
+use objc2_core_media::CMTime;
 use objc2_core_video::{
     CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight,
     CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
@@ -61,19 +60,34 @@ fn on_main<R: Send>(action: impl FnOnce(MainThreadMarker) -> R + Send) -> R {
     landed.expect("the main queue ran the action")
 }
 
-/// A decoder that plays a joined HLS window through AVPlayer and reads BGRA.
+/// A decoder that plays an HLS stream through AVPlayer and reads BGRA.
+///
+/// Apple documents HLS as an HTTP-delivered playlist + MPEG-TS segments; a raw
+/// joined `.ts` file is not a supported standalone `AVPlayerItem(url:)` source
+/// (it fails with "Cannot Open"). The original `.m3u8` URL is passed straight to
+/// AVPlayer, which handles the playlist, segments and adaptation itself. Audio
+/// is muted here because cranpose pairs the source's sound separately on iOS.
 pub(crate) struct AvPlayerDecoder {
     player: SendRetained<AVPlayer>,
     item: SendRetained<AVPlayerItem>,
     output: SendRetained<AVPlayerItemVideoOutput>,
     info: VideoInfo,
-    started: Instant,
-    first_pts: Option<Duration>,
 }
 
 impl AvPlayerDecoder {
-    pub(crate) fn open(path: &Path) -> Result<Self, VideoError> {
-        let path = path.to_path_buf();
+    /// Opens a local file URL. Kept for the older per-window HLS path; on iOS a
+    /// raw MPEG-TS file is not a supported standalone AVPlayerItem source, so
+    /// the main HLS path uses [`Self::open_url`] with the original playlist.
+    pub(crate) fn open_file(path: &std::path::Path) -> Result<Self, VideoError> {
+        let address = format!("file://{}", path.to_string_lossy());
+        Self::open_url(&address)
+    }
+
+    /// Opens the HLS playlist URL directly. AVPlayer reads the index and its
+    /// MPEG-TS segments over HTTP — the supported Apple path — instead of a
+    /// joined local `.ts`, which AVFoundation cannot open as a standalone file.
+    pub(crate) fn open_url(address: &str) -> Result<Self, VideoError> {
+        let address = address.to_owned();
         let setup: Result<
             (
                 SendRetained<AVPlayer>,
@@ -82,10 +96,14 @@ impl AvPlayerDecoder {
             ),
             String,
         > = on_main(move |mtm| {
-            let url = NSURL::from_file_path(&path)
-                .ok_or_else(|| "the joined HLS window path is not a file URL".to_owned())?;
+            let text = NSString::from_str(&address);
+            let url = NSURL::URLWithString(&text)
+                .ok_or_else(|| format!("the HLS address is not a valid URL: {address}"))?;
             let item = unsafe { AVPlayerItem::initWithURL(AVPlayerItem::alloc(mtm), &url) };
             let player = unsafe { AVPlayer::initWithPlayerItem(AVPlayer::alloc(mtm), Some(&item)) };
+            // cranpose pairs this source's audio on iOS; keep AVPlayer silent so
+            // the two paths do not play the same sound twice.
+            unsafe { player.setVolume(0.0) };
             let key: &NSString =
                 unsafe { &*(kCVPixelBufferPixelFormatTypeKey as *const _ as *const NSString) };
             let value: &AnyObject = &NSNumber::new_u32(BGRA);
@@ -147,14 +165,19 @@ impl AvPlayerDecoder {
             item,
             output,
             info,
-            started: Instant::now(),
-            first_pts: None,
         })
     }
 
     fn item_time(&self) -> CMTime {
-        let elapsed = self.started.elapsed();
-        unsafe { CMTimeMake(elapsed.as_secs() as i64 * 1_000_000, 1_000_000) }
+        // Use the player's own clock: it has sub-second precision and stays
+        // correct through rebuffering. Whole-second truncation used to query
+        // the video output at the same instant for ~1 s (frames=0), and a local
+        // Instant drifted whenever AVPlayer stalled to fill its buffer.
+        let player_ptr = &self.player.0 as *const Retained<AVPlayer> as usize;
+        on_main(move |_| unsafe {
+            let player = &*(player_ptr as *const Retained<AVPlayer>);
+            player.currentTime()
+        })
     }
 }
 
@@ -182,30 +205,37 @@ impl crate::VideoDecoder for AvPlayerDecoder {
     }
 
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError> {
-        let time = self.item_time();
         let output_ptr = &self.output.0 as *const Retained<AVPlayerItemVideoOutput> as usize;
-        let deadline = Instant::now() + Duration::from_millis(100);
-        let mut got_frame = false;
+        // A live HLS source buffers over HTTP, so the first frame can take well
+        // over 100 ms. Wait long enough that normal buffering is not mistaken
+        // for end-of-media (which would end the feed or churn windows). The
+        // worker polls read again, so this only bounds one frame's wait.
+        let deadline = Instant::now() + Duration::from_millis(2000);
+        let mut found: Option<CMTime> = None;
         while Instant::now() < deadline {
+            // Recompute the item time each poll: a single value held across a
+            // long wait goes stale and keeps missing the moving play head.
+            let time = self.item_time();
             let has = on_main(move |_| unsafe {
                 let out = &*(output_ptr as *const Retained<AVPlayerItemVideoOutput>);
                 out.hasNewPixelBufferForItemTime(time)
             });
             if has {
-                got_frame = true;
+                found = Some(time);
                 break;
             }
-            std::thread::sleep(Duration::from_millis(5));
+            std::thread::sleep(Duration::from_millis(10));
         }
-        if !got_frame {
+        let Some(time) = found else {
             return Ok(None);
-        }
+        };
         // Copy inside on_main: the CVPixelBuffer is not Send, so only the
         // resulting RGBA bytes and dimensions cross back to the decode thread.
-        let copied: Option<(Vec<u8>, u32, u32)> = on_main(move |_| unsafe {
+        let copied: Option<(Vec<u8>, u32, u32, f64)> = on_main(move |_| unsafe {
             let out = &*(output_ptr as *const Retained<AVPlayerItemVideoOutput>);
+            let mut display_time = time;
             let Some(buffer) =
-                out.copyPixelBufferForItemTime_itemTimeForDisplay(time, ptr::null_mut())
+                out.copyPixelBufferForItemTime_itemTimeForDisplay(time, &mut display_time)
             else {
                 return None;
             };
@@ -229,14 +259,19 @@ impl crate::VideoDecoder for AvPlayerDecoder {
                 None
             };
             CVPixelBufferUnlockBaseAddress(&buffer, lock_flags);
-            pixels.map(|pixels| (pixels, width, height))
+            // Use the buffer's true display deadline as the frame timestamp so
+            // VFR and 25/50/60 fps streams are paced correctly instead of a
+            // fabricated fixed 33 ms step.
+            let seconds = display_time.seconds();
+            pixels
+                .filter(|_| seconds.is_finite() && seconds >= 0.0)
+                .map(|pixels| (pixels, width, height, seconds))
         });
-        let Some((pixels, width, height)) = copied else {
+        let Some((pixels, width, height, seconds)) = copied else {
             return Ok(None);
         };
         *rgba = pixels;
-        let pts = self.first_pts.unwrap_or(Duration::ZERO);
-        self.first_pts = Some(pts + Duration::from_millis(33));
+        let pts = Duration::from_secs_f64(seconds);
         Ok(Some(DecodedFrame { pts, width, height }))
     }
 }
