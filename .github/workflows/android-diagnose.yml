@@ -1,0 +1,77 @@
+name: Diagnose Android launch (logcat)
+
+# Runs the signed APK on a GitHub-hosted Android emulator, launches the
+# activity and captures logcat. The crash reason that makes the app exit on a
+# real device shows up here as DEBUG/AndroidRuntime or cranpose lines.
+on:
+  workflow_dispatch:
+    inputs:
+      apk_artifact_run:
+        description: 'Run id that produced counter-signed-apk (e.g. 45046825409)'
+        type: string
+        default: '45046825409'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0" "emulator" "system-images;android-35;google_apis;x86_64"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+      - name: Download the signed APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_RUN: ${{ inputs.apk_artifact_run }}
+        run: |
+          gh run download "$APK_RUN" -R iq-858/counter -p counter-signed-apk -D apk
+          APK=$(find apk -name '*.apk' | head -n 1)
+          echo "APK=$APK"
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      - name: Create and boot emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          avd-name: counter_diag
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            echo "=== EMULATOR READY ==="
+            adb shell getprop ro.build.version.release
+            echo "=== INSTALL APK ==="
+            adb install -r "$APK_PATH"
+            echo "=== CLEAR LOGCAT ==="
+            adb logcat -c
+            echo "=== LAUNCH ACTIVITY ==="
+            adb shell monkey -p com.example.counter -c android.intent.category.LAUNCHER 1 || true
+            echo "=== WAIT 15s ==="
+            sleep 15
+            echo "=== DUMP LOGCAT ==="
+            adb logcat -d -v threadtime > "$GITHUB_WORKSPACE/logcat.txt"
+            cat "$GITHUB_WORKSPACE/logcat.txt"
+
+      - name: Upload logcat
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-logcat
+          path: logcat.txt
+          if-no-files-found: error
