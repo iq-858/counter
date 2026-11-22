@@ -4,10 +4,19 @@
 > `VideoPlayerHandle::stop()`، الأنواع `ProControl`/`GlassStyle`/`VideoControlsOptions`،
 > وcomposables `VideoControlsPro` + `Video{Mute,Loop,Stop,Speed}Button` + `VideoVolumeSlider`.
 > اختبارات التركيب أُضيفت في `tests/widget.rs`.
-> **ما لم يُنفَّذ (مقصود):** الأيقونات المتجهة (SF Symbols) وتأثير الـ glass الحقيقي
-> (blur/material) لأن `cranpose-ui` لا يوفّرهما — استُخدمت رموز Unicode قياسية
-> (`▶ ‹‹ ›› ↺ ■ 🔊`) وأزرار `ButtonSpec` الافتراضية. VoiceOver/Dynamic Type/44pt
-> لا تزال `[HYPOTHESIS]` غير مُختبَرة على جهاز. انظر `FUTURE-ROADMAP.md` §1 و§6.
+> **تحديث ثانٍ 2026-11-22 [SOURCE-VERIFIED] — تصميم أقوى:** أُضيفت مكوّنات
+> `VideoControlsLiquid` و`VideoLiquidIconButton` + النوع `VideoLiquidAction`،
+> وتعلية `cranpose-liquid 0.24.0` كـ dependency اختياري داخل ميزة `widget`.
+> هذه المكوّنات تستخدم **أيقونات متجهة حقيقية** (مسارات Material Media مضمّنة
+> في `widget.rs`) عبر `GlassIconButton`، و**تأثير glass حقيقي** (backdrop blur
+> + tint + specular) عبر `GlassIconButtonGroup`، و**أنيميشن زنبركي حقيقي**
+> (`LiquidMotion::snappy()` + `liquid_press_scale`) عند الضغط.
+> `GlassIconButtonGroup` يوفّر `content_description` لكل زر ( accessibility ).
+> المكوّنات القديمة (`VideoControlsPro` إلخ) ما زالت كما هي توافقاً.
+> ** VoiceOver/Dynamic Type** تعتمد الآن على ما يوفّره liquid من دلالات،
+> لكن السلوك الجهازي لا يزال `[HYPOTHESIS]` غير مُختبَر على جهاز.
+> `cargo check` نظيف؛ اختبارات `cargo test` تصطدم بـ ICE في أداة الترجمة
+> `rustc 1.99.1` على Windows مع `cranpose-ui-graphics` (مشكلة أداة، لا كود).
 > **قيد تحقّق:** `cargo check` ناجح؛ اختبارات `cargo test` تصطدم بـ ICE في أداة
 > الترجمة `rustc 1.99.1` على Windows مع `cranpose-ui-graphics` (مشكلة أداة، لا كود).
 >

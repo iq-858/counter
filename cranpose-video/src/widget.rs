@@ -9,7 +9,37 @@ use cranpose_ui::{
     widgets::{Box, BoxSpec, Slider, SliderScope, SliderSpec},
 };
 
+use cranpose_liquid::{
+    GlassIconButton, GlassIconButtonGroup, GlassIconButtonGroupScope, GlassIconButtonGroupSpec,
+    GlassButtonSpec,
+};
 use crate::{VideoError, VideoInfo, VideoPlayer, VideoSource, VideoState};
+
+// Material Design media glyphs (24x24 viewBox, Apache-2.0), drawn as vectors by
+// cranpose-ui's IconWith through the liquid glass icon buttons. Keeping them
+// here avoids a hard dependency on a particular icon-pack version.
+const ICON_PLAY: &str =
+    "M8 5v14l11-7z";
+#[allow(dead_code)]
+const ICON_PAUSE: &str =
+    "M6 19h4V5H6v14zm8-14v14h4V5h-4z";
+#[allow(dead_code)]
+const ICON_STOP: &str =
+    "M6 6h12v12H6z";
+#[allow(dead_code)]
+const ICON_REPLAY: &str =
+    "M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z";
+const ICON_SKIP_BACK: &str =
+    "M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z";
+const ICON_SKIP_FORWARD: &str =
+    "M4 18l8.5-6L4 6v12zm9-12v12l8.5-6-8.5-6z";
+#[allow(dead_code)]
+const ICON_VOLUME: &str =
+    "M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z";
+const ICON_MUTE: &str =
+    "M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z";
+const ICON_REPEAT: &str =
+    "M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z";
 
 /// How far the seek buttons of [`VideoWithControls`] move the clock.
 const SEEK_STEP: Duration = Duration::from_secs(5);
@@ -783,6 +813,119 @@ pub fn VideoControlsPro(
             }
         },
     );
+}
+
+/// Liquid-glass transport bar: vector icons, a real frosted backdrop and a
+/// spring press animation — all from `cranpose-liquid`.
+///
+/// Additive and self-contained: it consumes a caller-owned handle and opens no
+/// player. The backdrop blur and press scale come from the framework, so this
+/// composable renders on every target the widget feature builds for.
+#[composable]
+pub fn VideoControlsLiquid(
+    handle: VideoPlayerHandle,
+    modifier: Modifier,
+    options: VideoControlsOptions,
+) {
+    let tick = rememberMutableStateOf(|| 0u64);
+    let tick_state = tick.clone();
+    LaunchedEffect(handle.clone(), async move |scope| {
+        loop {
+            scope.with_frame_nanos(|_| ()).await;
+            tick_state.set(tick_state.get().wrapping_add(1));
+        }
+    });
+    Column(
+        modifier,
+        ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
+        {
+            let bar = handle;
+            let status_tick = tick;
+            let opts = options;
+            move || {
+                let _ = status_tick.get();
+                if opts.show_status {
+                    Text(status(&bar), Modifier::empty(), TextStyle::default());
+                }
+                if opts.show_progress {
+                    VideoProgressSlider(bar.clone(), Modifier::empty().fill_max_width());
+                }
+                let play = bar.clone();
+                let back = bar.clone();
+                let forward = bar.clone();
+                let mute = bar.clone();
+                let repeat = bar.clone();
+                GlassIconButtonGroup(
+                    Modifier::empty(),
+                    GlassIconButtonGroupSpec::default(),
+                    move |scope: &GlassIconButtonGroupScope| {
+                        scope.action(ICON_PLAY, "Play or pause", move || {
+                            let _ = play.toggle();
+                        });
+                        scope.action(ICON_SKIP_BACK, "Back 5 seconds", move || {
+                            let _ = back.seek(back.position().saturating_sub(opts.seek_step));
+                        });
+                        scope.action(ICON_SKIP_FORWARD, "Forward 5 seconds", move || {
+                            let _ = forward.seek(forward.position() + opts.seek_step);
+                        });
+                        scope.action(ICON_REPEAT, "Toggle loop", move || {
+                            let _ = repeat.set_looping(!repeat.is_looping());
+                        });
+                        scope.action(ICON_MUTE, "Mute or unmute", move || {
+                            let _ = mute.set_muted(!mute.is_muted());
+                        });
+                    },
+                );
+            }
+        },
+    );
+}
+
+/// One liquid-glass icon button with a press animation, for callers that want a
+/// single control (for example a custom overlay) rather than the full bar.
+#[composable]
+pub fn VideoLiquidIconButton(
+    handle: VideoPlayerHandle,
+    modifier: Modifier,
+    icon: &'static str,
+    action: VideoLiquidAction,
+) {
+    let target = handle;
+    // The frosted material and the spring press scale live inside GlassIconButton
+    // (LiquidMotion::snappy()). No per-frame work runs on the composition thread.
+    GlassIconButton(
+        modifier,
+        GlassButtonSpec::glass(),
+        44.0,
+        move || {
+            let _ = match action {
+                VideoLiquidAction::Toggle => target.toggle(),
+                VideoLiquidAction::Stop => target.stop(),
+                VideoLiquidAction::Replay => {
+                    let _ = target.seek(Duration::ZERO);
+                    target.play()
+                }
+                VideoLiquidAction::Mute => target.set_muted(!target.is_muted()),
+                VideoLiquidAction::Loop => target.set_looping(!target.is_looping()),
+            };
+        },
+        icon,
+    );
+}
+
+/// The action a [`VideoLiquidIconButton`] performs when pressed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoLiquidAction {
+    /// Toggle play/pause.
+    Toggle,
+    /// Stop and return to the first frame.
+    Stop,
+    /// Seek to the beginning and play.
+    Replay,
+    /// Toggle mute.
+    Mute,
+    /// Toggle looping.
+    Loop,
 }
 
 /// One button of the controls.

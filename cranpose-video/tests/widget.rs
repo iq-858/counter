@@ -6,8 +6,9 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 use cranpose_ui::{Modifier, Size, run_test_composition, widgets::slider::SliderSpec};
 use cranpose_video::{
     GlassStyle, ProControl, VideoControls, VideoControlsOptions, VideoControlsPro,
-    VideoLoopButton, VideoMuteButton, VideoProgressSliderWith, VideoSpeedButton, VideoStopButton,
-    VideoVolumeSlider, rememberVideoPlayer,
+    VideoControlsLiquid, VideoLiquidAction, VideoLiquidIconButton, VideoLoopButton, VideoMuteButton,
+    VideoProgressSliderWith, VideoSpeedButton, VideoStopButton, VideoVolumeSlider,
+    rememberVideoPlayer,
 };
 
 const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
@@ -46,6 +47,28 @@ fn pro_controls_compose_from_a_caller_owned_handle() {
                 .style(GlassStyle::Floating)
                 .elements(&[ProControl::PlayPause, ProControl::Mute, ProControl::Stop]),
         );
+    });
+}
+
+#[test]
+fn liquid_glass_controls_compose_with_vector_icons() {
+    // The liquid bar renders real vector icons, a frosted glass backdrop and a
+    // spring press animation. A layout pass exercises the icon/glass internals.
+    compose_and_measure(move || {
+        let handle = rememberVideoPlayer(CLIP);
+        VideoControlsLiquid(
+            handle,
+            Modifier::empty(),
+            VideoControlsOptions::new().show_status(true).show_progress(true),
+        );
+    });
+}
+
+#[test]
+fn a_single_liquid_icon_button_composes() {
+    compose_and_measure(move || {
+        let handle = rememberVideoPlayer(CLIP);
+        VideoLiquidIconButton(handle, Modifier::empty(), "\u{25B6}", VideoLiquidAction::Toggle);
     });
 }
 
