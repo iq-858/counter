@@ -31,8 +31,11 @@ cranpose {
     // service declares.
     services.addAll("network")
 
-    // arm64 covers modern devices and the x86_64 image covers the emulator.
-    releaseAbis.set(listOf("arm64-v8a", "x86_64"))
+    // Package every ABI so `System.loadLibrary("counter")` succeeds on any
+    // device. With only arm64/x86_64, a 32-bit (armeabi-v7a) phone could not
+    // load libcounter.so at all: android_main was never reached, so the app
+    // showed no UI and exited immediately.
+    releaseAbis.set(listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64"))
     releaseProfile.set("release")
 }
 
