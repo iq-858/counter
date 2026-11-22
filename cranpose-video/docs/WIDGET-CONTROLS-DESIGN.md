@@ -1,8 +1,20 @@
 # تصميم أدوات تحكم فيديو بنمط iOS: إضافة غير كاسرة لطبقة `widget`
 
-> **نوع المستند:** تصميم واجهة عامة (API design) + مواصفات بصرية + خطة اختبار. **فرضية تصميمية** بالكامل؛ لم تُنفَّذ أي شيفرة.
+> **تحديث 2026-11-22 [SOURCE-VERIFIED]:** نُفّذت الإضافات في `src/widget.rs` و`src/lib.rs`:
+> `VideoPlayerHandle::stop()`، الأنواع `ProControl`/`GlassStyle`/`VideoControlsOptions`،
+> وcomposables `VideoControlsPro` + `Video{Mute,Loop,Stop,Speed}Button` + `VideoVolumeSlider`.
+> اختبارات التركيب أُضيفت في `tests/widget.rs`.
+> **ما لم يُنفَّذ (مقصود):** الأيقونات المتجهة (SF Symbols) وتأثير الـ glass الحقيقي
+> (blur/material) لأن `cranpose-ui` لا يوفّرهما — استُخدمت رموز Unicode قياسية
+> (`▶ ‹‹ ›› ↺ ■ 🔊`) وأزرار `ButtonSpec` الافتراضية. VoiceOver/Dynamic Type/44pt
+> لا تزال `[HYPOTHESIS]` غير مُختبَرة على جهاز. انظر `FUTURE-ROADMAP.md` §1 و§6.
+> **قيد تحقّق:** `cargo check` ناجح؛ اختبارات `cargo test` تصطدم بـ ICE في أداة
+> الترجمة `rustc 1.99.1` على Windows مع `cranpose-ui-graphics` (مشكلة أداة، لا كود).
+>
+> **نوع المستند الأصلي:** تصميم واجهة عامة (API design) + مواصفات بصرية + خطة اختبار.
 > **التاريخ:** 2026-11-20.
-> **نطاق التعديل:** **هذا الملف فقط.** لم تعدَّل أي شيفرة Rust، ولا `Cargo.toml`، ولا `README.md`، ولا أي ملف آخر. لم يُنفَّذ `commit` ولا أي عمل على Linux/Windows.
+> **نطاق التعديل الأصلي:** **هذا الملف فقط.** لم تعدَّل أي شيفرة Rust، ولا `Cargo.toml`،
+> ولا `README.md`، ولا أي ملف آخر. لم يُنفَّذ `commit` ولا أي عمل على Linux/Windows.
 > **المدخل:** واجهة `widget` المُدقَّقة في `src/widget.rs` و`src/player.rs`. كل حقيقة «مؤكدة من المصدر» أدناه مُرفقة بـ `file:line` مقروء فعلياً.
 > **قاعدة الأرقام:** لا توجد قياسات أداء/حرارة/ذاكرة في هذا المستند، ولا تُختلَق. أي ادّعاء كهذا يحتاج تشغيلاً على جهاز وسجلاً مسجّلاً (انظر `docs/phone-integration-review.md:273`, `docs/mobile-platform-audit.md:173`). الأرقام الوحيدة المستخدمة هي ثوابت مصدرية مُشار إليها أو قواعد HIG خارجية مُوسومة كذلك.
 

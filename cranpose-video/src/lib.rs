@@ -61,7 +61,9 @@ pub use state::VideoState;
 pub use telemetry::{EventRecord, PlaybackDiagnostics, PlaybackEvent, SessionId};
 #[cfg(feature = "widget")]
 pub use widget::{
-    Video, VideoControls, VideoPlayerHandle, VideoProgressSlider, VideoProgressSliderWith,
+    GlassStyle, ProControl, Video, VideoControls, VideoControlsOptions, VideoControlsPro,
+    VideoLoopButton, VideoMuteButton, VideoPlayerHandle, VideoProgressSlider,
+    VideoProgressSliderWith, VideoSpeedButton, VideoStopButton, VideoVolumeSlider,
     VideoWithControls, progress_fraction_for, rememberVideoPlayer,
 };
 

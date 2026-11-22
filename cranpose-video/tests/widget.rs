@@ -4,7 +4,11 @@
 use std::{cell::Cell, rc::Rc, time::Duration};
 
 use cranpose_ui::{Modifier, Size, run_test_composition, widgets::slider::SliderSpec};
-use cranpose_video::{VideoControls, VideoProgressSliderWith, rememberVideoPlayer};
+use cranpose_video::{
+    GlassStyle, ProControl, VideoControls, VideoControlsOptions, VideoControlsPro,
+    VideoLoopButton, VideoMuteButton, VideoProgressSliderWith, VideoSpeedButton, VideoStopButton,
+    VideoVolumeSlider, rememberVideoPlayer,
+};
 
 const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
 
@@ -26,6 +30,34 @@ fn ready_made_controls_compose_from_an_existing_handle() {
     run_test_composition(move || {
         let handle = rememberVideoPlayer(CLIP);
         VideoControls(handle, Modifier::empty());
+    });
+}
+
+#[test]
+fn pro_controls_compose_from_a_caller_owned_handle() {
+    // The extended bar consumes a handle and opens no extra decoder. Composition
+    // plus a layout pass exercises every button/slider content closure.
+    compose_and_measure(move || {
+        let handle = rememberVideoPlayer(CLIP);
+        VideoControlsPro(
+            handle,
+            Modifier::empty(),
+            VideoControlsOptions::new()
+                .style(GlassStyle::Floating)
+                .elements(&[ProControl::PlayPause, ProControl::Mute, ProControl::Stop]),
+        );
+    });
+}
+
+#[test]
+fn individual_pro_controls_compose() {
+    compose_and_measure(move || {
+        let handle = rememberVideoPlayer(CLIP);
+        VideoMuteButton(handle.clone(), Modifier::empty());
+        VideoLoopButton(handle.clone(), Modifier::empty());
+        VideoStopButton(handle.clone(), Modifier::empty());
+        VideoSpeedButton(handle.clone(), Modifier::empty(), &[0.5, 1.0, 2.0]);
+        VideoVolumeSlider(handle, Modifier::empty(), SliderSpec::default());
     });
 }
 

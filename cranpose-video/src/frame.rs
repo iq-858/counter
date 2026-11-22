@@ -131,7 +131,14 @@ impl VideoFrame {
         if width == 0 || height == 0 {
             return None;
         }
-        let expected = width as usize * height as usize * 4;
+        // Checked arithmetic: hostile metadata with huge dimensions could wrap
+        // the product to a small number and let a short buffer through.
+        let Some(expected) = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+        else {
+            return None;
+        };
         (rgba.len() == expected).then(|| Self {
             width,
             height,
@@ -158,7 +165,13 @@ impl VideoFrame {
         if width == 0 || height == 0 || width % 2 != 0 || height % 2 != 0 {
             return None;
         }
-        let expected = width as usize * height as usize * 3 / 2;
+        let Some(expected) = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(3))
+            .map(|bytes| bytes / 2)
+        else {
+            return None;
+        };
         (planes.len() == expected).then(|| Self {
             width,
             height,

@@ -154,8 +154,10 @@ pub(crate) struct Audio {
     session: Option<PlaybackSession>,
     /// Last observed audio-route generation. A change means the output device
     /// was swapped (headphones unplugged, Bluetooth connected); on iOS this is
-    /// how the generic backend re-binds without freezing the picture.
+    /// how the generic backend re-binds without freezing the picture. Only iOS
+    /// reads it today, so other targets see an allowed dead field.
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+    #[allow(dead_code)]
     route_generation: u64,
     /// Whether this source's first failed prepare was already reported. A
     /// container with no audio track fails every time; reporting each failure

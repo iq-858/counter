@@ -1139,7 +1139,14 @@ impl VideoPlayer {
                 operation: "seeking by fraction",
             });
         };
-        let fraction = fraction.clamp(0.0, 1.0);
+        // `clamp` keeps NaN as NaN; `Duration::mul_f32(NaN)` panics, so a bad
+        // UI value (slider or parsed text) must be neutralised first, matching
+        // the guards in set_speed/set_volume.
+        let fraction = if fraction.is_finite() {
+            fraction.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         self.seek(duration.mul_f32(fraction))
     }
 

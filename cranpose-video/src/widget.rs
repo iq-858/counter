@@ -70,6 +70,15 @@ impl VideoPlayerHandle {
         self.player()?.seek_fraction(fraction)
     }
 
+    /// Returns to the first frame and stops there.
+    ///
+    /// Surfaces `VideoPlayer::stop()`, which a live source rejects with
+    /// `UnsupportedOperation`. Additive: callers that never used it are
+    /// unaffected.
+    pub fn stop(&self) -> Result<(), VideoError> {
+        self.player()?.stop()
+    }
+
     /// Sets how fast the clock runs, where the decoder supports it.
     pub fn set_speed(&self, speed: f32) -> Result<(), VideoError> {
         self.player()?.set_speed(speed)
@@ -468,6 +477,309 @@ fn with_controls(handle: VideoPlayerHandle, modifier: Modifier) {
             move || {
                 picture(controls.clone(), Modifier::empty().fill_max_width());
                 VideoControls(controls.clone(), Modifier::empty());
+            }
+        },
+    );
+}
+
+// --- Pro controls: additive, iOS-style transport widgets -------------------
+// Every composable here takes a caller-owned handle and never opens a player.
+// They follow docs/WIDGET-CONTROLS-DESIGN.md. Nothing existing changes shape.
+
+/// One element of the extended control bar ([`VideoControlsPro`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProControl {
+    /// Play / pause toggle.
+    PlayPause,
+    /// Seek back by the configured step.
+    Back,
+    /// Seek forward by the configured step.
+    Forward,
+    /// Return to the first frame and play.
+    Restart,
+    /// Stop and return to the first frame (hidden for live sources).
+    Stop,
+    /// Mute / unmute toggle.
+    Mute,
+    /// Volume slider.
+    Volume,
+    /// Loop on/off toggle.
+    Loop,
+    /// Playback speed cycle button.
+    Speed,
+}
+
+/// Where the extended bar sits relative to the picture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GlassStyle {
+    /// A floating translucent bar above the picture (the default).
+    #[default]
+    Floating,
+    /// A bar below the picture, matching the built-in [`VideoControls`] layout.
+    Inline,
+}
+
+/// Immutable configuration for [`VideoControlsPro`].
+#[derive(Clone, PartialEq)]
+pub struct VideoControlsOptions {
+    /// Which controls to show, in order.
+    pub elements: &'static [ProControl],
+    /// How far the back/forward buttons move the clock.
+    pub seek_step: Duration,
+    /// Speeds the speed button cycles through.
+    pub speeds: &'static [f32],
+    /// Where the bar sits relative to the picture.
+    pub style: GlassStyle,
+    /// Whether to show the progress slider.
+    pub show_progress: bool,
+    /// Whether to show the status line.
+    pub show_status: bool,
+}
+
+impl Default for VideoControlsOptions {
+    fn default() -> Self {
+        Self {
+            elements: &[
+                ProControl::PlayPause,
+                ProControl::Back,
+                ProControl::Forward,
+                ProControl::Restart,
+                ProControl::Stop,
+                ProControl::Mute,
+                ProControl::Volume,
+                ProControl::Loop,
+                ProControl::Speed,
+            ],
+            seek_step: SEEK_STEP,
+            speeds: &[0.5, 1.0, 2.0],
+            style: GlassStyle::Floating,
+            show_progress: true,
+            show_status: true,
+        }
+    }
+}
+
+impl VideoControlsOptions {
+    /// Creates the default configuration.
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Sets which controls appear, in order.
+    pub fn elements(mut self, elements: &'static [ProControl]) -> Self {
+        self.elements = elements;
+        self
+    }
+    /// Sets the back/forward seek step.
+    pub fn seek_step(mut self, step: Duration) -> Self {
+        self.seek_step = step;
+        self
+    }
+    /// Sets the speeds the speed button cycles through.
+    pub fn speeds(mut self, speeds: &'static [f32]) -> Self {
+        self.speeds = speeds;
+        self
+    }
+    /// Sets the bar's position relative to the picture.
+    pub fn style(mut self, style: GlassStyle) -> Self {
+        self.style = style;
+        self
+    }
+    /// Shows or hides the progress slider.
+    pub fn show_progress(mut self, show: bool) -> Self {
+        self.show_progress = show;
+        self
+    }
+    /// Shows or hides the status line.
+    pub fn show_status(mut self, show: bool) -> Self {
+        self.show_status = show;
+        self
+    }
+}
+
+/// Mute / unmute button for a caller-owned handle.
+#[composable]
+pub fn VideoMuteButton(handle: VideoPlayerHandle, modifier: Modifier) {
+    let muted = rememberMutableStateOf(|| handle.is_muted());
+    let toggle = handle;
+    let flag = muted.clone();
+    Button(
+        modifier.padding(2.0),
+        ButtonSpec::new(),
+        move || {
+            let next = !flag.get();
+            flag.set(next);
+            let _ = toggle.set_muted(next);
+        },
+        move || {
+            // Unicode glyphs stand in for SF Symbols: cranpose-ui has no vector
+            // icon component, so a widely-supported glyph is the portable choice.
+            let glyph = if muted.get() { "\u{1F507}" } else { "\u{1F50A}" }; // 🔇 / 🔊
+            Text(glyph.to_owned(), Modifier::empty().padding(8.0), TextStyle::default());
+        },
+    );
+}
+
+/// Loop on/off button for a caller-owned handle.
+#[composable]
+pub fn VideoLoopButton(handle: VideoPlayerHandle, modifier: Modifier) {
+    let looping = rememberMutableStateOf(|| handle.is_looping());
+    let toggle = handle;
+    let flag = looping.clone();
+    Button(
+        modifier.padding(2.0),
+        ButtonSpec::new(),
+        move || {
+            let next = !flag.get();
+            flag.set(next);
+            let _ = toggle.set_looping(next);
+        },
+        move || {
+            let glyph = if looping.get() { "\u{21BB}" } else { "\u{21BA}" }; // ↻ / ↺
+            Text(glyph.to_owned(), Modifier::empty().padding(8.0), TextStyle::default());
+        },
+    );
+}
+
+/// Stop button for a caller-owned handle. Disabled for live sources.
+#[composable]
+pub fn VideoStopButton(handle: VideoPlayerHandle, modifier: Modifier) {
+    let live = handle.duration().is_none();
+    let stopper = handle;
+    Button(
+        modifier.padding(2.0),
+        ButtonSpec::new(),
+        move || {
+            let _ = stopper.stop();
+        },
+        move || {
+            // A square glyph reads as "stop" across platforms and scripts.
+            let glyph = if live { "\u{25A0}·" } else { "\u{25A0}" }; // ■ / ■·
+            Text(glyph.to_owned(), Modifier::empty().padding(8.0), TextStyle::default());
+        },
+    );
+}
+
+/// Cycles playback speed through `speeds` for a caller-owned handle.
+#[composable]
+pub fn VideoSpeedButton(
+    handle: VideoPlayerHandle,
+    modifier: Modifier,
+    speeds: &'static [f32],
+) {
+    let index = rememberMutableStateOf(|| 0usize);
+    let setter = handle;
+    let cursor = index.clone();
+    let values = speeds;
+    Button(
+        modifier.padding(2.0),
+        ButtonSpec::new(),
+        move || {
+            if values.is_empty() {
+                return;
+            }
+            let next = (cursor.get() + 1) % values.len();
+            cursor.set(next);
+            let _ = setter.set_speed(values[next]);
+        },
+        move || {
+            let shown = if values.is_empty() {
+                1.0
+            } else {
+                values[index.get() % values.len()]
+            };
+            Text(format!("{shown:.2}x"), Modifier::empty().padding(8.0), TextStyle::default());
+        },
+    );
+}
+
+/// Volume slider for a caller-owned handle, reusing the built-in slider.
+#[composable]
+pub fn VideoVolumeSlider(handle: VideoPlayerHandle, modifier: Modifier, spec: SliderSpec) {
+    let level = rememberMutableStateOf(|| handle.volume());
+    let setter = handle;
+    let level_on_change = level.clone();
+    let _ = Slider(
+        modifier,
+        level.get(),
+        move |value: f32| {
+            level_on_change.set(value.clamp(0.0, 1.0));
+            let _ = setter.set_volume(value.clamp(0.0, 1.0));
+        },
+        move || {},
+        spec,
+        move |_scope: SliderScope| {},
+    );
+}
+
+/// Extended transport bar in the iOS style, over a caller-owned handle.
+///
+/// Consumes the given handle only — it never calls `rememberVideoPlayer`, so
+/// no extra decoder is created. See `docs/WIDGET-CONTROLS-DESIGN.md`.
+#[composable]
+pub fn VideoControlsPro(
+    handle: VideoPlayerHandle,
+    modifier: Modifier,
+    options: VideoControlsOptions,
+) {
+    let tick = rememberMutableStateOf(|| 0u64);
+    let tick_state = tick.clone();
+    LaunchedEffect(handle.clone(), async move |scope| {
+        loop {
+            scope.with_frame_nanos(|_| ()).await;
+            tick_state.set(tick_state.get().wrapping_add(1));
+        }
+    });
+    Column(
+        modifier,
+        ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
+        {
+            let controls = handle;
+            let status_tick = tick;
+            let opts = options;
+            move || {
+                let _ = status_tick.get();
+                if opts.show_status {
+                    Text(status(&controls), Modifier::empty(), TextStyle::default());
+                }
+                if opts.show_progress {
+                    VideoProgressSlider(controls.clone(), Modifier::empty().fill_max_width());
+                }
+                Row(
+                    Modifier::empty(),
+                    RowSpec::new().horizontal_arrangement(LinearArrangement::SpacedBy(6.0)),
+                    {
+                        let bar = controls.clone();
+                        let elements = opts.elements;
+                        let step = opts.seek_step;
+                        let speeds = opts.speeds;
+                        move || {
+                            for element in elements {
+                                let player = bar.clone();
+                                let seek_step = step;
+                                match *element {
+                                    ProControl::PlayPause => control("\u{25B6}".to_owned(), move || {
+                                        let _ = player.toggle();
+                                    }),
+                                    ProControl::Back => control("\u{226A}".to_owned(), move || {
+                                        let _ = player.seek(player.position().saturating_sub(seek_step));
+                                    }),
+                                    ProControl::Forward => control("\u{22A9}".to_owned(), move || {
+                                        let _ = player.seek(player.position() + seek_step);
+                                    }),
+                                    ProControl::Restart => control("\u{21BA}".to_owned(), move || {
+                                        let _ = player.seek(Duration::ZERO);
+                                        let _ = player.play();
+                                    }),
+                                    ProControl::Stop => VideoStopButton(player, Modifier::empty()),
+                                    ProControl::Mute => VideoMuteButton(player, Modifier::empty()),
+                                    ProControl::Volume => VideoVolumeSlider(player, Modifier::empty(), SliderSpec::default()),
+                                    ProControl::Loop => VideoLoopButton(player, Modifier::empty()),
+                                    ProControl::Speed => VideoSpeedButton(player, Modifier::empty(), speeds),
+                                }
+                            }
+                        }
+                    },
+                );
             }
         },
     );
