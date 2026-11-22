@@ -152,6 +152,11 @@ pub(crate) struct Audio {
     /// The player's recovery record, when this build has one.
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
     session: Option<PlaybackSession>,
+    /// Last observed audio-route generation. A change means the output device
+    /// was swapped (headphones unplugged, Bluetooth connected); on iOS this is
+    /// how the generic backend re-binds without freezing the picture.
+    #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+    route_generation: u64,
     /// Whether this source's first failed prepare was already reported. A
     /// container with no audio track fails every time; reporting each failure
     /// would keep a silent picture in recovery forever. One report arms the
@@ -184,6 +189,8 @@ impl Audio {
             last_route_check: None,
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             session: None,
+            #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+            route_generation: crate::session::route_change_generation(),
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             session_failed_reported: false,
         }
@@ -369,7 +376,34 @@ impl Audio {
     /// replacement is refused outright unless its PCM layout matches exactly,
     /// so no resampler or converter is ever exercised to bridge a change.
     pub(crate) fn observe_output_route(&mut self) {
-        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        #[cfg(target_os = "ios")]
+        {
+            // iOS offers no portable default-output query here, but a route
+            // change (headphones unplugged / Bluetooth) invalidates the generic
+            // audio stream. AVAudioSession re-routes AVPlayer itself, but our
+            // SoftwareMediaPlayer needs an explicit re-attach. Re-bind only the
+            // sound — never touch the session phase or the picture — so a route
+            // swap cannot freeze the video.
+            let generation = crate::session::route_change_generation();
+            if generation != self.route_generation {
+                self.route_generation = generation;
+                if let Some(source) = self.source.clone() {
+                    let head = self.head();
+                    let last_seek_at = self.last_seek_at;
+                    self.detach();
+                    self.head = head;
+                    self.head_at = Instant::now();
+                    self.last_seek_at = last_seek_at;
+                    self.attach(&source);
+                }
+            }
+        }
+        #[cfg(not(any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "ios"
+        )))]
         {
             // Android's AAudio backend and the browser own their own routing;
             // neither offers a portable default-output query here.

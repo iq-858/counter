@@ -161,6 +161,22 @@ fn live_sessions() -> &'static std::sync::Mutex<Vec<std::sync::Weak<SessionInner
     LIVE_SESSIONS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
+/// Bumped on every system audio-route change (headset unplug, Bluetooth).
+///
+/// A route change must NOT force the player into `Recovering`: that stops frame
+/// publication, which froze both picture and sound when headphones were
+/// unplugged. Instead the generic audio backend polls this counter and re-binds
+/// only its own output stream. A decoder that owns its sound (AVPlayer) ignores
+/// it — AVAudioSession re-routes AVPlayer automatically.
+#[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+static ROUTE_CHANGE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// The current route-change generation, for a backend to notice a new route.
+#[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+pub(crate) fn route_change_generation() -> u64 {
+    ROUTE_CHANGE_GENERATION.load(Ordering::Acquire)
+}
+
 impl PlaybackSession {
     /// Starts a session in [`PlaybackState::Opening`].
     pub fn new() -> Self {
@@ -186,17 +202,29 @@ impl PlaybackSession {
         session
     }
 
-    /// Arms one verification attempt on every live session. A platform audio
-    /// route observer (headset unplug, Bluetooth connect) calls this so each
-    /// player re-attaches its audio source without a manual stop/play.
+    /// Records a system audio-route change on every live session. A platform
+    /// route observer (headset unplug, Bluetooth connect) calls this. The generic
+    /// audio backend re-binds its own stream by polling the generation counter;
+    /// the picture and the session phase are deliberately left untouched.
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
     pub fn route_changed_all() {
+        // A route change must never stop the frame pump. Forcing `Recovering`
+        // here made the worker pause publication and wait, which froze picture
+        // AND sound when headphones were unplugged; only toggling play restored
+        // it. Instead, bump a generation counter the generic audio backend
+        // polls, and record the event on each session for observability. The
+        // backend re-binds its output without disturbing the picture. Decoders
+        // that own their sound (AVPlayer) re-route through AVAudioSession on
+        // their own and ignore the counter.
+        ROUTE_CHANGE_GENERATION.fetch_add(1, Ordering::AcqRel);
         let mut live = live_sessions().lock().unwrap_or_else(|e| e.into_inner());
         live.retain(|weak| weak.strong_count() > 0);
         let sessions: Vec<_> = live.iter().filter_map(|weak| weak.upgrade()).collect();
         drop(live);
         for inner in sessions {
-            PlaybackSession { inner }.route_changed();
+            let session = PlaybackSession { inner };
+            // Record only; do not transition to Recovering or arm a retry.
+            session.push(SessionEvent::RouteChanged);
         }
     }
 

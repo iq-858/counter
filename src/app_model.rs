@@ -170,7 +170,14 @@ pub fn resolved_source(clip: &Clip) -> String {
         // Cargo manifest directory at runtime, so resolve against the bundle
         // rather than the compile-time path (a Windows path that does not exist
         // on iOS), which used to make every clip report "no video track".
-        #[cfg(any(target_os = "ios", target_os = "android"))]
+        #[cfg(target_os = "android")]
+        {
+            // Android packages assets inside the APK; `std::fs` cannot read
+            // them from the executable's directory. Materialise the embedded
+            // clip into a writable cache path once and return that path.
+            return android_asset_path(clip.source);
+        }
+        #[cfg(target_os = "ios")]
         {
             if let Some(bundle) = std::env::current_exe()
                 .ok()
@@ -190,6 +197,39 @@ pub fn resolved_source(clip: &Clip) -> String {
     } else {
         clip.source.to_owned()
     }
+}
+
+/// Materialises an embedded video asset into a writable path on Android.
+///
+/// The APK holds the clips under `assets/videos`, which `std::fs` cannot read.
+/// On Android the Cranpose app's data directory is published in this
+/// environment variable; failing that, the process temp directory is writable.
+/// The file is written once (a stable, content-derived name) and reused.
+#[cfg(target_os = "android")]
+fn android_asset_path(source: &str) -> String {
+    let bytes: &[u8] = match source {
+        "assets/videos/bunny.mp4" => include_bytes!("../assets/videos/bunny.mp4"),
+        "assets/videos/bbb10.mp4" => include_bytes!("../assets/videos/bbb10.mp4"),
+        "assets/videos/flower.mp4" => include_bytes!("../assets/videos/flower.mp4"),
+        "assets/videos/sintel.mp4" => include_bytes!("../assets/videos/sintel.mp4"),
+        "assets/videos/w3c.mp4" => include_bytes!("../assets/videos/w3c.mp4"),
+        _ => return source.to_owned(),
+    };
+    // A short stable hash keeps names unique without collisions between clips.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in source.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    let name = format!("counter_{hash:016x}.mp4");
+    let dir = std::env::temp_dir();
+    let path = dir.join(&name);
+    if !path.exists() {
+        // A concurrent first frame can race; writing the same bytes twice is
+        // harmless, and a partially written file is fixed on the next call.
+        let _ = std::fs::write(&path, bytes);
+    }
+    path.to_string_lossy().into_owned()
 }
 
 /// Whether a page owns playback at a settled pager position.
