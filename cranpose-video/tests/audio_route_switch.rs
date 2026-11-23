@@ -15,6 +15,10 @@
 //!   4. video keeps publishing frames while audio is recovering;
 //!   5. rapid clip switches do not inherit a stuck session.
 
+// PlaybackSession / SessionEvent / the recovery hooks are compiled out on
+// Linux (see lib.rs cfg), so this suite only exists where they are exported.
+#![cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
