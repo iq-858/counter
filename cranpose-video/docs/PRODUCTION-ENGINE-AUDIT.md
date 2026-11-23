@@ -62,9 +62,15 @@
 
 ## 7. التحقق متعدد المنصات على GitHub
 أُضيف `.github/workflows/video-engine-matrix.yml`:
-- Windows / macOS / Linux: `cargo check` + اختبارات كاملة
-- iOS / Android (arm64 + armv7) / wasm32: `cargo check` crossover
+- Windows / macOS / Linux: `cargo check` + اختبارات كاملة (serial على macOS/Linux لتفادي تذبذب توقيت CI)
+- iOS / Android (arm64 + armv7) / wasm32: `cargo check` crossover بميزة `widget` وحدها (تجنّب C-deps الصوت التي تحتاج NDK clang)
 - wasm-pack build للويب
+
+**إصلاحات CI المكتشفة أثناء التشغيل الأول `[SOURCE-VERIFIED]`:**
+1. `widget` لم تكن تُفعّل `cranpose` (الـ `#[composable]` macro) → أُضيف `dep:cranpose` لميزة `widget`.
+2. الـ cross-check بـ `native-audio` يجلب `aws-lc-sys` (C) الذي يحتاج NDK clang → استُبدل بـ `widget` فقط.
+3. Linux احتاج `libasound2-dev` (alsa-sys).
+4. اختبارا `pacing` الحسّاسان بالتوقيت فشلا على macOS runner مزدحم → `--test-threads=1`.
 
 هذا **compile + unit verification** — ليس تشغيلاً على جهاز (موثّق بوضوح).
 
