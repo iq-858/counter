@@ -12,7 +12,7 @@ use std::time::Duration;
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app::AppSink;
-use gstreamer_video::{VideoFormat, VideoInfo as Caps, VideoOrientation};
+use gstreamer_video::{VideoFormat, VideoInfo as Caps};
 
 use super::super::temp_file::TempFile;
 use crate::{
@@ -58,8 +58,10 @@ pub(crate) fn open(source: &VideoSource) -> Result<Box<dyn VideoDecoder>, VideoE
                 "the system has no videoconvert, so it decodes no video: {error}"
             ))
         })?;
+    // videoflip defaults to identity orientation; newer gstreamer-video
+    // versions renamed `Auto` so we leave the property at its default instead
+    // of naming a variant that differs between releases.
     let flip = gst::ElementFactory::make("videoflip")
-        .property("video-direction", VideoOrientation::Auto)
         .build()
         .map_err(|error| {
             VideoError::Source(format!(
