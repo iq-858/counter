@@ -32,6 +32,16 @@
       #install-banner { display: none !important; }
     }
     .hint { color:#9898a5; font-size:.85rem; margin-top:8px; }
+    /* Advanced install sheet: native app-store style */
+    #install-sheet { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; justify-content:center; z-index:50; }
+    #install-sheet[hidden] { display:none; }
+    .sheet-card { background:#1c1c22; border:1px solid #3a3a46; border-radius:22px 22px 0 0; padding:22px 20px max(22px, env(safe-area-inset-bottom)); width:100%; max-width:520px; text-align:center; }
+    .sheet-icon { width:72px; height:72px; border-radius:18px; background:linear-gradient(145deg,#5b50e8,#8b5cf6); margin:0 auto 14px; display:flex; align-items:center; justify-content:center; font-size:34px; }
+    .sheet-title { font-size:1.25rem; font-weight:700; margin:0 0 6px; }
+    .sheet-sub { color:#9898a5; font-size:.9rem; margin:0 0 16px; }
+    .step { display:flex; align-items:center; gap:12px; background:#2a2a34; border-radius:12px; padding:10px 12px; margin-bottom:8px; text-align:right; }
+    .step-n { width:26px; height:26px; border-radius:50%; background:#5b50e8; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+    .sheet-close { background:#2c2c36; color:#f2f2f7; margin-top:10px; }
     pre { direction:ltr; text-align:left; background:#000; padding:12px; border-radius:10px; overflow:auto; font-size:.8rem; color:#7ee; }
   </style>
 </head>
@@ -59,6 +69,19 @@
     <div class="card">
       <div class="k">تقرير المكتبة (JSON)</div>
       <pre id="report">…</pre>
+    </div>
+  </div>
+
+  <!-- Advanced install sheet (native app-store style) -->
+  <div id="install-sheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-icon">📲</div>
+      <p class="sheet-title">ثبّت التطبيق على iPhone</p>
+      <p class="sheet-sub">لأن iOS لا يسمح بالتثبيت المباشر من الويب، قم بخطوتين سريعتين:</p>
+      <div class="step"><span class="step-n">1</span><span>اضغط زر <b>المشاركة</b> (مربع بسهم لأعلى)</span></div>
+      <div class="step"><span class="step-n">2</span><span>اختر <b>إضافة إلى الشاشة الرئيسية</b> ثم «إضافة»</span></div>
+      <button id="sheet-share" style="background:#0A84FF">افتح لوحة المشاركة الآن</button>
+      <button id="sheet-close" class="sheet-close">إغلاق</button>
     </div>
   </div>
 
@@ -164,7 +187,7 @@
     const iosNow = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     if (iosNow && typeof navigator.share === 'function') shareBtn.hidden = false;
-    shareBtn.onclick = async () => {
+    const doShare = async () => {
       try {
         await navigator.share({
           title: 'PWA Probe — Cranpose',
@@ -172,6 +195,18 @@
           url: location.href
         });
       } catch (e) { /* user canceled — fine */ }
+    };
+    shareBtn.onclick = () => {
+      // Show the native-style install sheet first (advanced UX), which then
+      // opens the share sheet on demand.
+      document.getElementById('install-sheet').hidden = false;
+    };
+    document.getElementById('sheet-share').onclick = async () => {
+      document.getElementById('install-sheet').hidden = true;
+      await doShare();
+    };
+    document.getElementById('sheet-close').onclick = () => {
+      document.getElementById('install-sheet').hidden = true;
     };
     // Dismiss persists across visits — the banner will not nag again.
     document.getElementById('dismiss-btn').onclick = () => {
