@@ -35,11 +35,18 @@ Paste `assets::BOOTSTRAP_JS` before the shell reads `?backend`, and `assets::IOS
 in `<head>`. Write `assets::SERVICE_WORKER_JS` to `sw.js` and `WebAppManifest::new(..).to_json()`
 to `manifest.webmanifest`.
 
-## Demo site
+## Demo site (LIVE)
 
-`demo/` is a standalone, installable PWA that displays live detection results.
-It works with pure JavaScript even before the WASM probe is built, so you can
-test on iOS immediately. See `demo/index.html`.
+**https://iq-858.github.io/counter/**
+
+`demo/` is a standalone, installable PWA that displays live detection results
+from the Rust WASM probe (93 KB) with a pure-JS fallback. Deployed via
+`.github/workflows/pwa-demo.yml` to GitHub Pages.
+
+Open it on an iPhone (Safari or Chrome): it auto-detects WebKit, injects
+`?backend=gl`, shows the install banner ("Add to Home Screen" on iOS), and
+prints the full device report. After installing from the share sheet, reopen
+it — the "standalone" card should turn green.
 
 ## Integration into upstream Cranpose
 
