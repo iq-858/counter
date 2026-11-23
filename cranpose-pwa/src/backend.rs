@@ -69,6 +69,7 @@ pub fn set_query_param(url: &str, key: &str, value: &str) -> Option<String> {
 pub fn apply_in_browser(info: &DeviceInfo) -> bool {
     #[cfg(target_arch = "wasm32")]
     {
+        use wasm_bindgen::JsCast;
         if !needs_gl_workaround(info) {
             return false;
         }
@@ -95,13 +96,21 @@ pub fn apply_in_browser(info: &DeviceInfo) -> bool {
             return false;
         }
         if let Some(next) = compatible_url(info, &href) {
-            return window
-                .history()
-                .and_then(|h| {
-                    h.replace_state(&wasm_bindgen::JsValue::NULL, "", &next)
-                        .ok()
-                })
-                .is_some();
+            // web-sys 0.3.107 exposes replaceState(data, title) only, but the
+            // DOM signature is (data, unused, url). Call it through Reflect so
+            // the URL is actually rewritten without a reload.
+            if let Ok(history) = window.history() {
+                let args = js_sys::Array::new();
+                args.push(&wasm_bindgen::JsValue::NULL);
+                args.push(&wasm_bindgen::JsValue::from_str(""));
+                args.push(&wasm_bindgen::JsValue::from_str(&next));
+                if let Ok(f) = js_sys::Reflect::get(&history, &wasm_bindgen::JsValue::from_str("replaceState")) {
+                    if let Some(fun) = f.dyn_ref::<js_sys::Function>() {
+                        return fun.apply(&history, &args).is_ok();
+                    }
+                }
+            }
+            return false;
         }
         false
     }

@@ -31,26 +31,21 @@ pub fn register(path: &str) -> RegistrationResult {
             None => return RegistrationResult::Unsupported,
         };
         let navigator = window.navigator();
-        let container = match navigator.service_worker() {
-            Some(c) => c,
-            None => return RegistrationResult::Unsupported,
-        };
-        if navigator.service_worker().is_none() {
+        // `service_worker()` returns the container directly; check the property
+        // to know whether the browser supports service workers at all.
+        if !js_sys::Reflect::has(&navigator, &JsValue::from_str("serviceWorker")).unwrap_or(false) {
             return RegistrationResult::Unsupported;
         }
+        let container = navigator.service_worker();
         // If already controlled, nothing to do.
         if container.controller().is_some() {
             return RegistrationResult::AlreadyControlled;
         }
         // register() returns a Promise; fire-and-forget is fine for a PWA shell
         // — installability will be reported by the beforeinstallprompt event.
-        match container.register(path) {
-            Ok(promise) => {
-                let _ = JsFuture::from(promise);
-                RegistrationResult::Registered
-            }
-            Err(_) => RegistrationResult::Failed,
-        }
+        // `register()` returns a Promise directly (no Result wrapper here).
+        let _ = JsFuture::from(container.register(path));
+        RegistrationResult::Registered
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

@@ -1,8 +1,8 @@
 {
   "name": "PWA Probe — Cranpose",
   "short_name": "PWA Probe",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0f1014",
   "theme_color": "#5b50e8",

@@ -72,15 +72,21 @@
     }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js').catch(function(e){ console.warn(e); });
+        navigator.serviceWorker.register('./sw.js').catch(function(e){ console.warn(e); });
       });
     }
   })();
   </script>
 
   <script type="module">
-    // Pure-JS detection mirroring cranpose-pwa's Rust logic 1:1 (same rules as
-    // backend_preference.rs / device.rs). Works on every phone without WASM.
+    // Try the Rust probe first (real cranpose-pwa logic), fall back to JS.
+    async function runProbe() {
+      try {
+        const mod = await import('./probe/cranpose_pwa_probe.js');
+        await mod.default();
+        return JSON.parse(mod.probe());
+      } catch (e) { return null; }
+    }
     function jsProbe() {
       const ua = navigator.userAgent || '';
       const family = /iPad|iPhone|iPod/.test(ua) ||
@@ -100,7 +106,7 @@
       };
     }
     const set = (id, text, cls) => { const el = document.getElementById(id); el.textContent = text; if (cls) el.className = 'v ' + cls; };
-    const report = jsProbe();
+    const report = await runProbe() || jsProbe();
     set('family', report.device_family + (report.webkit ? '  (WebKit)' : ''), report.webkit ? 'warn' : 'ok');
     set('engine', report.source || 'rust-wasm');
     set('webgpu', report.has_webgpu ? 'متاح ✅' : 'غير متاح', report.has_webgpu ? 'ok' : '');

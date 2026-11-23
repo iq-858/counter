@@ -1,5 +1,5 @@
 const CACHE = 'cranpose-pwa-probe-v1';
-const CORE = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/probe/cranpose_pwa_probe.js', '/probe/cranpose_pwa_probe_bg.wasm'];
+const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './probe/cranpose_pwa_probe.js', './probe/cranpose_pwa_probe_bg.wasm'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
