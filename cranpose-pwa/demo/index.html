@@ -89,7 +89,7 @@
     // Try the Rust probe first (real cranpose-pwa logic), fall back to JS.
     async function runProbe() {
       try {
-        const mod = await import('./probe/cranpose_pwa_probe.js');
+        const mod = await import('./probe/cranpose_pwa_probe.js?v=3');
         await mod.default();
         return JSON.parse(mod.probe());
       } catch (e) { return null; }
@@ -158,8 +158,12 @@
     };
     // iOS shortcut: open the native share sheet in one tap. The user then
     // picks "Add to Home Screen" — no API can install silently on iOS.
+    // Detect iOS directly from the UA here (not via the WASM probe) so the
+    // button ALWAYS shows on iPhone even if an old cached probe is still used.
     const shareBtn = document.getElementById('share-btn');
-    if (report.webkit && navigator.share) shareBtn.hidden = false;
+    const iosNow = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (iosNow && typeof navigator.share === 'function') shareBtn.hidden = false;
     shareBtn.onclick = async () => {
       try {
         await navigator.share({
