@@ -88,11 +88,15 @@ jobs:
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Check Android target ${{ matrix.target }}
         run: |
+          TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
           case "${{ matrix.target }}" in
-            aarch64-linux-android) CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang ;;
-            armv7-linux-androideabi) CC=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang ;;
+            aarch64-linux-android)
+              export CC=$TOOLCHAIN/aarch64-linux-android24-clang
+              export AR=$TOOLCHAIN/llvm-ar ;;
+            armv7-linux-androideabi)
+              export CC=$TOOLCHAIN/armv7a-linux-androideabi24-clang
+              export AR=$TOOLCHAIN/llvm-ar ;;
           esac
-          export CC
           cargo check --manifest-path cranpose-video/Cargo.toml --target ${{ matrix.target }} --no-default-features --features widget
 
   # ---------- Cross compile: wasm ----------
