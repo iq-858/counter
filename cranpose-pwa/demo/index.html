@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#5b50e8">
+  <!-- iOS standalone PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PWA Probe">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <title>فحص PWA — Cranpose</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#0f1014; color:#f2f2f7; padding: max(20px, env(safe-area-inset-top)) 20px; line-height:1.6; }
+    .wrap { max-width:720px; margin:0 auto; }
+    h1 { font-size:1.5rem; margin:0 0 4px; }
+    .sub { color:#9898a5; margin:0 0 24px; font-size:.95rem; }
+    .card { background:#1c1c22; border:1px solid #2c2c36; border-radius:16px; padding:16px 18px; margin:0 0 14px; }
+    .k { color:#9898a5; font-size:.85rem; }
+    .v { font-size:1.05rem; font-weight:600; margin-top:2px; word-break:break-all; }
+    .ok { color:#30d158; } .bad { color:#ff453a; } .warn { color:#ff9f0a; }
+    .pill { display:inline-block; padding:3px 10px; border-radius:999px; background:#2c2c36; font-size:.8rem; margin-left:6px; }
+    button { width:100%; min-height:50px; border:0; border-radius:14px; background:#5b50e8; color:#fff; font-size:1rem; font-weight:700; margin-top:8px; }
+    button[hidden] { display:none; }
+    #install-banner { background:linear-gradient(135deg,#2a2450,#1c1c22); border:1px solid #5b50e8; }
+    .hint { color:#9898a5; font-size:.85rem; margin-top:8px; }
+    pre { direction:ltr; text-align:left; background:#000; padding:12px; border-radius:10px; overflow:auto; font-size:.8rem; color:#7ee; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>فحص دعم PWA</h1>
+    <p class="sub">مكتبة <code>cranpose-pwa</code> — كشف الجهاز، قابلية التثبيت، والإصلاح التلقائي لـ WebGL2 على iOS</p>
+
+    <div id="install-banner" class="card" hidden>
+      <div class="v">ثبّت هذا التطبيق</div>
+      <div class="hint" id="install-hint"></div>
+      <button id="install-btn" hidden>تثبيت الآن</button>
+    </div>
+
+    <div class="card"><div class="k">نوع الجهاز</div><div class="v" id="family">…</div></div>
+    <div class="card"><div class="k">محرك JavaScript</div><div class="v" id="engine">…</div></div>
+    <div class="card"><div class="k">WebGPU</div><div class="v" id="webgpu">…</div></div>
+    <div class="card"><div class="k">WebGL2</div><div class="v" id="webgl2">…</div></div>
+    <div class="card"><div class="k">Service Worker</div><div class="v" id="sw">…</div></div>
+    <div class="card"><div class="k">وضع التثبيت (standalone)</div><div class="v" id="standalone">…</div></div>
+    <div class="card"><div class="k">قابلية التثبيت</div><div class="v" id="installability">…</div></div>
+    <div class="card"><div class="k">الإصلاح التلقائي (backend=gl)</div><div class="v" id="fix">…</div></div>
+    <div class="card">
+      <div class="k">تقرير المكتبة (JSON)</div>
+      <pre id="report">…</pre>
+    </div>
+  </div>
+
+  <!-- Bootstrap from cranpose-pwa assets: auto WebGL2 + service worker -->
+  <script>
+  (function () {
+    var ua = navigator.userAgent || '';
+    var isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+      var url = new URL(window.location.href);
+      var b = url.searchParams.get('backend');
+      if (b === null || b === 'auto') {
+        url.searchParams.set('backend', 'gl');
+        window.history.replaceState({}, '', url);
+        window.__pwaFixApplied = true;
+      }
+    }
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function(e){ console.warn(e); });
+      });
+    }
+  })();
+  </script>
+
+  <script type="module">
+    // Pure-JS detection mirroring cranpose-pwa's Rust logic 1:1 (same rules as
+    // backend_preference.rs / device.rs). Works on every phone without WASM.
+    function jsProbe() {
+      const ua = navigator.userAgent || '';
+      const family = /iPad|iPhone|iPod/.test(ua) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+        ? (ua.toLowerCase().includes('ipad') || navigator.maxTouchPoints > 1 ? 'IPad' : 'IPhone')
+        : /android/i.test(ua) ? 'Android' : 'Desktop';
+      return {
+        device_family: family,
+        user_agent: ua,
+        has_webgpu: 'gpu' in navigator,
+        has_webgl2: !!document.createElement('canvas').getContext('webgl2'),
+        service_worker_supported: 'serviceWorker' in navigator,
+        standalone: window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone,
+        webkit: family === 'IPhone' || family === 'IPad',
+        fix_applied: !!window.__pwaFixApplied,
+        source: 'javascript-fallback'
+      };
+    }
+    const set = (id, text, cls) => { const el = document.getElementById(id); el.textContent = text; if (cls) el.className = 'v ' + cls; };
+    const report = jsProbe();
+    set('family', report.device_family + (report.webkit ? '  (WebKit)' : ''), report.webkit ? 'warn' : 'ok');
+    set('engine', report.source || 'rust-wasm');
+    set('webgpu', report.has_webgpu ? 'متاح ✅' : 'غير متاح', report.has_webgpu ? 'ok' : '');
+    set('webgl2', report.has_webgl2 ? 'متاح ✅' : 'غير متاح', report.has_webgl2 ? 'ok' : 'bad');
+    set('sw', report.service_worker_supported ? 'مدعوم ✅' : 'غير مدعوم', report.service_worker_supported ? 'ok' : 'bad');
+    set('standalone', report.standalone ? 'نعم — مثبّت ✅' : 'لا — متصفح عادي', report.standalone ? 'ok' : '');
+    set('fix', report.fix_applied ? 'تم حقن backend=gl تلقائياً ✅' : 'غير مطلوب', report.fix_applied ? 'ok' : '');
+    set('installability', report.installability || (report.service_worker_supported ? 'ManualAvailable' : 'NotInstallable'));
+    document.getElementById('report').textContent = JSON.stringify(report, null, 2);
+
+    // Install banner: prompt on Chromium, manual instructions on iOS.
+    let deferred = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault(); deferred = e;
+      document.getElementById('install-banner').hidden = false;
+      document.getElementById('install-btn').hidden = false;
+      document.getElementById('install-hint').textContent = 'اضغط للتثبيت كتطبيق مستقل';
+    });
+    if (report.webkit && !report.standalone && report.service_worker_supported) {
+      document.getElementById('install-banner').hidden = false;
+      document.getElementById('install-hint').textContent =
+        'على iOS: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»';
+    }
+    document.getElementById('install-btn').onclick = async () => {
+      if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; }
+    };
+  </script>
+</body>
+</html>
