@@ -100,9 +100,11 @@ fn detect_web() -> DeviceInfo {
         .and_then(|c| c.dyn_into::<web_sys::HtmlCanvasElement>().ok())
         .and_then(|c| c.get_context("webgl2").ok().flatten())
         .is_some();
-    let service_worker_supported =
-        js_sys::Reflect::has(&navigator, &wasm_bindgen::JsValue::from_str("serviceWorker"))
-            .unwrap_or(false);
+    let service_worker_supported = js_sys::Reflect::has(
+        &navigator,
+        &wasm_bindgen::JsValue::from_str("serviceWorker"),
+    )
+    .unwrap_or(false);
     // `(display-mode: standalone)` is the standards-based signal; on iOS the
     // legacy `navigator.standalone` property also reports it.
     let standalone = window
@@ -135,8 +137,7 @@ fn classify(ua: &str, window: &web_sys::Window) -> DeviceFamily {
     if ua_lower.contains("iphone") || ua_lower.contains("ipod") {
         DeviceFamily::IPhone
     } else if ua_lower.contains("ipad")
-        || (ua_lower.contains("macintosh")
-            && window.navigator().max_touch_points() > 1)
+        || (ua_lower.contains("macintosh") && window.navigator().max_touch_points() > 1)
     {
         // iPadOS reports a desktop-class Mac user agent; touch points > 1
         // distinguish it from a real Mac.

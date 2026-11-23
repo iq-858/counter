@@ -20,6 +20,7 @@
 
 pub mod assets;
 pub mod backend;
+pub mod build;
 pub mod cache;
 pub mod device;
 pub mod install;
@@ -148,6 +149,7 @@ pub mod prelude {
         Pwa,
         assets::{BOOTSTRAP_JS, IOS_META, SERVICE_WORKER_JS},
         backend::{BACKEND_PARAM, GL_VALUE, compatible_url, needs_gl_workaround},
+        build::{PwaBuildConfig, emit},
         cache::{CachePolicy, CacheRule, CacheStrategy},
         device::{DeviceFamily, DeviceInfo, detect},
         install::{

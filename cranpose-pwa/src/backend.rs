@@ -104,7 +104,9 @@ pub fn apply_in_browser(info: &DeviceInfo) -> bool {
                 args.push(&wasm_bindgen::JsValue::NULL);
                 args.push(&wasm_bindgen::JsValue::from_str(""));
                 args.push(&wasm_bindgen::JsValue::from_str(&next));
-                if let Ok(f) = js_sys::Reflect::get(&history, &wasm_bindgen::JsValue::from_str("replaceState")) {
+                if let Ok(f) =
+                    js_sys::Reflect::get(&history, &wasm_bindgen::JsValue::from_str("replaceState"))
+                {
                     if let Some(fun) = f.dyn_ref::<js_sys::Function>() {
                         return fun.apply(&history, &args).is_ok();
                     }
