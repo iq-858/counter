@@ -94,15 +94,31 @@ impl InstallState {
         self.captured = Some(prompt);
     }
 
-    /// The user declined — hide the banner for this session.
+    /// The user declined — hide the banner for this AND future visits.
+    ///
+    /// The flag is persisted in `localStorage`, so reopening the site (or
+    /// reloading after the user chose "Not now" in the browser prompt) does
+    /// not show the banner again. The user can still install from the browser
+    /// UI at any time; we just stop nagging.
     pub fn dismiss(&mut self) {
         self.user_dismissed = true;
+        crate::persist::set(crate::persist::KEY_DISMISSED, true);
         self.captured = None;
     }
 
-    /// Whether the user already dismissed the prompt.
+    /// Records that our prompt was shown, so we know we already asked once.
+    pub fn mark_prompted(&self) {
+        crate::persist::set(crate::persist::KEY_PROMPTED, true);
+    }
+
+    /// Whether we previously showed the install prompt.
+    pub fn was_prompted() -> bool {
+        crate::persist::get(crate::persist::KEY_PROMPTED)
+    }
+
+    /// Whether the user already dismissed the prompt (persisted).
     pub fn is_dismissed(&self) -> bool {
-        self.user_dismissed
+        self.user_dismissed || crate::persist::get(crate::persist::KEY_DISMISSED)
     }
 
     /// Prompts install if a captured event exists. Returns whether a prompt
@@ -116,7 +132,7 @@ impl InstallState {
         if info.standalone {
             return Installability::Installed;
         }
-        if self.user_dismissed {
+        if self.is_dismissed() {
             return Installability::NotInstallable;
         }
         if self.captured.is_some() {
@@ -245,6 +261,8 @@ mod tests {
     fn dismissal_hides_banner() {
         let mut state = InstallState::new();
         state.dismiss();
+        assert!(state.user_dismissed, "in-memory flag set on native");
+        // On native, persistence is a no-op; is_dismissed still true from memory.
         assert!(state.is_dismissed());
         assert_eq!(
             state.installability(&info(DeviceFamily::Android, false, true)),

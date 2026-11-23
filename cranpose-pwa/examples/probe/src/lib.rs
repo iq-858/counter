@@ -23,6 +23,8 @@ pub fn probe() -> String {
         "fix_applied": fix_applied,
         "installability": format!("{:?}", pwa.installability()),
         "advice": format!("{:?}", pwa.advice()),
+        "dismissed": pwa.install().is_dismissed(),
+        "was_prompted": cranpose_pwa::install::InstallState::was_prompted(),
     });
     if let Some(url) = cranpose_pwa::backend::compatible_url(
         info,

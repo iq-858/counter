@@ -25,6 +25,7 @@ pub mod cache;
 pub mod device;
 pub mod install;
 pub mod manifest;
+pub mod persist;
 pub mod preload;
 pub mod service_worker;
 
@@ -156,6 +157,7 @@ pub mod prelude {
             InstallAdvice, InstallPrompt, InstallState, Installability, advice, listen_for_prompt,
         },
         manifest::{DisplayMode, Icon, WebAppManifest},
+        persist::{KEY_DISMISSED, KEY_PROMPTED},
         preload::{AsKind, modulepreload_tag, preload_tag, wasm_head_bundle},
         service_worker::{RegistrationResult, register},
     };

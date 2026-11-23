@@ -39,6 +39,7 @@
       <div class="v">ثبّت هذا التطبيق</div>
       <div class="hint" id="install-hint"></div>
       <button id="install-btn" hidden>تثبيت الآن</button>
+      <button id="dismiss-btn" style="background:#2c2c36;color:#f2f2f7">لا تظهر مجدداً</button>
     </div>
 
     <div class="card"><div class="k">نوع الجهاز</div><div class="v" id="family">…</div></div>
@@ -115,9 +116,15 @@
     set('standalone', report.standalone ? 'نعم — مثبّت ✅' : 'لا — متصفح عادي', report.standalone ? 'ok' : '');
     set('fix', report.fix_applied ? 'تم حقن backend=gl تلقائياً ✅' : 'غير مطلوب', report.fix_applied ? 'ok' : '');
     set('installability', report.installability || (report.service_worker_supported ? 'ManualAvailable' : 'NotInstallable'));
+    if (report.dismissed) {
+      document.getElementById('install-hint').textContent = 'لقد رفضت التثبيت سابقاً — لن تظهر الرسالة مجدداً';
+    }
     document.getElementById('report').textContent = JSON.stringify(report, null, 2);
 
-    // Install banner: prompt on Chromium, manual instructions on iOS.
+    // Install banner: never show if dismissed previously (persisted in
+    // localStorage by cranpose-pwa) or if already installed (standalone).
+    const DISMISS_KEY = 'cranpose_pwa_install_dismissed';
+    const previouslyDismissed = localStorage.getItem(DISMISS_KEY) === '1';
     let deferred = null;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault(); deferred = e;
@@ -125,13 +132,28 @@
       document.getElementById('install-btn').hidden = false;
       document.getElementById('install-hint').textContent = 'اضغط للتثبيت كتطبيق مستقل';
     });
-    if (report.webkit && !report.standalone && report.service_worker_supported) {
+    if (!previouslyDismissed && !report.standalone &&
+        (report.webkit || report.service_worker_supported) &&
+        report.installability !== 'Installed') {
       document.getElementById('install-banner').hidden = false;
-      document.getElementById('install-hint').textContent =
-        'على iOS: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»';
+      document.getElementById('install-hint').textContent = report.webkit
+        ? 'على iOS: اضغط زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»'
+        : 'اضغط للتثبيت كتطبيق مستقل';
     }
     document.getElementById('install-btn').onclick = async () => {
-      if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; }
+      if (deferred) {
+        deferred.prompt();
+        const choice = await deferred.userChoice;
+        deferred = null;
+        if (choice && choice.outcome === 'accepted') {
+          document.getElementById('install-banner').hidden = true;
+        }
+      }
+    };
+    // Dismiss persists across visits — the banner will not nag again.
+    document.getElementById('dismiss-btn').onclick = () => {
+      localStorage.setItem(DISMISS_KEY, '1');
+      document.getElementById('install-banner').hidden = true;
     };
   </script>
 </body>
