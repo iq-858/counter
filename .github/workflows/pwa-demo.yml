@@ -1,7 +1,7 @@
 name: Deploy PWA demo
 
-# Publishes cranpose-pwa/demo to GitHub Pages at:
-# https://iq-858.github.io/counter/pwa/
+# Publishes cranpose-pwa/demo to the root of GitHub Pages:
+# https://iq-858.github.io/counter/
 # A public URL you can open on an iPhone to test installability + detection.
 on:
   workflow_dispatch:
