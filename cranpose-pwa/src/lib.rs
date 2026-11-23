@@ -155,7 +155,7 @@ pub mod prelude {
         device::{DeviceFamily, DeviceInfo, detect},
         install::{
             InstallAdvice, InstallPrompt, InstallState, Installability, advice,
-            listen_for_app_installed, listen_for_prompt,
+            listen_for_app_installed, listen_for_prompt, share_for_install,
         },
         manifest::{DisplayMode, Icon, WebAppManifest},
         persist::{KEY_DISMISSED, KEY_PROMPTED},

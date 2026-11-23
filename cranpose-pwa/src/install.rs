@@ -202,6 +202,51 @@ where
     }
 }
 
+/// Opens the OS share sheet via `navigator.share()` (Web Share API).
+///
+/// On iOS this is the closest official shortcut to installation: the share
+/// sheet contains "Add to Home Screen". It still requires the user's final
+/// tap — no browser API can install silently on iOS. Must be called from a
+/// user gesture (button click). Returns `false` when unsupported or canceled.
+pub fn share_for_install(title: &str, text: &str, url: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen::prelude::*;
+        let navigator = match web_sys::window() {
+            Some(w) => w.navigator(),
+            None => return false,
+        };
+        if !js_sys::Reflect::has(&navigator, &JsValue::from_str("share")).unwrap_or(false) {
+            return false;
+        }
+        let data = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(
+            &data,
+            &JsValue::from_str("title"),
+            &JsValue::from_str(title),
+        );
+        let _ = js_sys::Reflect::set(&data, &JsValue::from_str("text"), &JsValue::from_str(text));
+        let _ = js_sys::Reflect::set(&data, &JsValue::from_str("url"), &JsValue::from_str(url));
+        // Fire-and-forget: the promise resolves when the sheet closes. We only
+        // need to know that the API was invoked successfully here.
+        let f = match js_sys::Reflect::get(&navigator, &JsValue::from_str("share")) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        let fun = match f.dyn_ref::<js_sys::Function>() {
+            Some(fun) => fun,
+            None => return false,
+        };
+        return fun.call1(&navigator, &data).is_ok();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (title, text, url);
+        false
+    }
+}
+
 /// Registers the `appinstalled` event (Chromium) to observe a successful
 /// installation. This is for analytics/UI cleanup only — it cannot cause an
 /// install. Returns `false` on browsers that do not fire it (including iOS).

@@ -44,6 +44,7 @@
       <div class="v">ثبّت هذا التطبيق</div>
       <div class="hint" id="install-hint"></div>
       <button id="install-btn" hidden>تثبيت الآن</button>
+      <button id="share-btn" hidden style="background:#0A84FF">فتح لوحة المشاركة (إضافة إلى الشاشة الرئيسية)</button>
       <button id="dismiss-btn" style="background:#2c2c36;color:#f2f2f7">لا تظهر مجدداً</button>
     </div>
 
@@ -154,6 +155,19 @@
           document.getElementById('install-banner').hidden = true;
         }
       }
+    };
+    // iOS shortcut: open the native share sheet in one tap. The user then
+    // picks "Add to Home Screen" — no API can install silently on iOS.
+    const shareBtn = document.getElementById('share-btn');
+    if (report.webkit && navigator.share) shareBtn.hidden = false;
+    shareBtn.onclick = async () => {
+      try {
+        await navigator.share({
+          title: 'PWA Probe — Cranpose',
+          text: 'ثبّت هذا التطبيق على الشاشة الرئيسية',
+          url: location.href
+        });
+      } catch (e) { /* user canceled — fine */ }
     };
     // Dismiss persists across visits — the banner will not nag again.
     document.getElementById('dismiss-btn').onclick = () => {
