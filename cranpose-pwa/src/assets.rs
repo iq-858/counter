@@ -55,6 +55,16 @@ pub const IOS_META: &str = r##"
 
 /// The JavaScript snippet that registers the service worker and the automatic
 /// WebKit/`backend=gl` fix. Paste before the shell reads `?backend`.
+/// CSS that hides install UI once the PWA is installed. `[SOURCE-VERIFIED
+/// web.dev]`: install instructions should render only in `display-mode: browser`;
+/// standalone/fullscreen means the user already installed. This is the reliable
+/// signal on iOS where localStorage is isolated between Safari and the PWA.
+pub const INSTALL_UI_CSS: &str = r#"
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  [data-pwa-install-ui] { display: none !important; }
+}
+"#;
+
 pub const BOOTSTRAP_JS: &str = r#"
 <script>
 (function () {

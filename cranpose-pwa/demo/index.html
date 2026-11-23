@@ -26,6 +26,11 @@
     button { width:100%; min-height:50px; border:0; border-radius:14px; background:#5b50e8; color:#fff; font-size:1rem; font-weight:700; margin-top:8px; }
     button[hidden] { display:none; }
     #install-banner { background:linear-gradient(135deg,#2a2450,#1c1c22); border:1px solid #5b50e8; }
+    /* web.dev recommended: hide install UI in standalone/fullscreen (installed).
+       Works even when the installed PWA has isolated localStorage from Safari. */
+    @media (display-mode: standalone), (display-mode: fullscreen) {
+      #install-banner { display: none !important; }
+    }
     .hint { color:#9898a5; font-size:.85rem; margin-top:8px; }
     pre { direction:ltr; text-align:left; background:#000; padding:12px; border-radius:10px; overflow:auto; font-size:.8rem; color:#7ee; }
   </style>

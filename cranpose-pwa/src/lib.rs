@@ -148,13 +148,14 @@ mod runtime {
 pub mod prelude {
     pub use crate::{
         Pwa,
-        assets::{BOOTSTRAP_JS, IOS_META, SERVICE_WORKER_JS},
+        assets::{BOOTSTRAP_JS, INSTALL_UI_CSS, IOS_META, SERVICE_WORKER_JS},
         backend::{BACKEND_PARAM, GL_VALUE, compatible_url, needs_gl_workaround},
         build::{PwaBuildConfig, emit},
         cache::{CachePolicy, CacheRule, CacheStrategy},
         device::{DeviceFamily, DeviceInfo, detect},
         install::{
-            InstallAdvice, InstallPrompt, InstallState, Installability, advice, listen_for_prompt,
+            InstallAdvice, InstallPrompt, InstallState, Installability, advice,
+            listen_for_app_installed, listen_for_prompt,
         },
         manifest::{DisplayMode, Icon, WebAppManifest},
         persist::{KEY_DISMISSED, KEY_PROMPTED},

@@ -202,6 +202,37 @@ where
     }
 }
 
+/// Registers the `appinstalled` event (Chromium) to observe a successful
+/// installation. This is for analytics/UI cleanup only — it cannot cause an
+/// install. Returns `false` on browsers that do not fire it (including iOS).
+pub fn listen_for_app_installed<F>(mut on_installed: F) -> bool
+where
+    F: FnMut() + 'static,
+{
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::closure::Closure;
+        use wasm_bindgen::prelude::*;
+        let window = match web_sys::window() {
+            Some(w) => w,
+            None => return false,
+        };
+        let closure = Closure::wrap(Box::new(move || on_installed()) as Box<dyn FnMut()>);
+        let ok = window
+            .add_event_listener_with_callback("appinstalled", closure.as_ref().unchecked_ref())
+            .is_ok();
+        if ok {
+            closure.forget();
+        }
+        ok
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = on_installed;
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
