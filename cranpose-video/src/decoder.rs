@@ -45,6 +45,22 @@ pub trait VideoDecoder: Send {
     /// `Ok(None)` stops reading until a seek or a restart.
     fn read(&mut self, rgba: &mut Vec<u8>) -> Result<Option<DecodedFrame>, VideoError>;
 
+    /// The explicit outcome of a read, which distinguishes a terminal end of
+    /// media from a temporary stall or a decoder waiting for more input.
+    ///
+    /// Default: derives from `read()`, so existing backends keep their exact
+    /// behaviour. A live or adaptive backend should override this to return
+    /// `NeedMoreInput` / `NoPictureYet` instead of `EndOfStream` while it is
+    /// still able to produce pictures.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn read_outcome(
+        &mut self,
+        rgba: &mut Vec<u8>,
+    ) -> Result<crate::decode_result::ReadOutcome, VideoError> {
+        self.read(rgba)
+            .map(crate::decode_result::ReadOutcome::from_legacy)
+    }
+
     /// The pixel layout [`read`](Self::read) or [`read_nv12`](Self::read_nv12)
     /// fills.
     ///

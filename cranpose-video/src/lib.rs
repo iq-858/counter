@@ -8,6 +8,8 @@ mod audio;
 // exist (not wasm, which plays in the browser).
 #[cfg(not(target_arch = "wasm32"))]
 mod arbitration;
+mod color;
+mod decode_result;
 mod decoder;
 mod diagnostics;
 mod error;
@@ -25,10 +27,12 @@ mod logfile;
 mod pixels;
 mod platform;
 mod player;
+mod resource;
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 mod session;
 mod source;
 mod state;
+mod subtitle;
 mod telemetry;
 #[cfg(any(
     target_os = "windows",
@@ -42,6 +46,8 @@ mod time_wait;
 #[cfg(feature = "widget")]
 pub mod widget;
 
+pub use color::{ChromaLocation, ColorInfo, ColorPrimaries, HdrMetadata, TransferFunction};
+pub use decode_result::{FrameStamp, ReadOutcome};
 pub use decoder::{DecodedFrame, VideoDecoder};
 pub(crate) use diagnostics::diag;
 pub use diagnostics::set_diagnostic_sink;
@@ -51,6 +57,7 @@ pub use info::{FrameRate, Rotation, VideoInfo};
 pub use logfile::{is_logging, log_note, log_path, start_log_file, stop_log_file};
 pub use platform::Platform;
 pub use player::VideoPlayer;
+pub use resource::{PrefetchGuard, Priority, ResourceLimits, VideoResourceManager};
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 pub use session::{
     InterruptionReason, PlaybackSession, PlaybackState, RECOVERY_COOLDOWN, RECOVERY_COOLDOWN_MAX,
@@ -58,6 +65,7 @@ pub use session::{
 };
 pub use source::VideoSource;
 pub use state::VideoState;
+pub use subtitle::{SubtitleCue, active_at, parse as parse_subtitles};
 pub use telemetry::{EventRecord, PlaybackDiagnostics, PlaybackEvent, SessionId};
 #[cfg(feature = "widget")]
 pub use widget::{

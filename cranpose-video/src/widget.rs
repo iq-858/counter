@@ -9,37 +9,28 @@ use cranpose_ui::{
     widgets::{Box, BoxSpec, Slider, SliderScope, SliderSpec},
 };
 
-use cranpose_liquid::{
-    GlassIconButton, GlassIconButtonGroup, GlassIconButtonGroupScope, GlassIconButtonGroupSpec,
-    GlassButtonSpec,
-};
 use crate::{VideoError, VideoInfo, VideoPlayer, VideoSource, VideoState};
+use cranpose_liquid::{
+    GlassButtonSpec, GlassIconButton, GlassIconButtonGroup, GlassIconButtonGroupScope,
+    GlassIconButtonGroupSpec,
+};
 
 // Material Design media glyphs (24x24 viewBox, Apache-2.0), drawn as vectors by
 // cranpose-ui's IconWith through the liquid glass icon buttons. Keeping them
 // here avoids a hard dependency on a particular icon-pack version.
-const ICON_PLAY: &str =
-    "M8 5v14l11-7z";
+const ICON_PLAY: &str = "M8 5v14l11-7z";
 #[allow(dead_code)]
-const ICON_PAUSE: &str =
-    "M6 19h4V5H6v14zm8-14v14h4V5h-4z";
+const ICON_PAUSE: &str = "M6 19h4V5H6v14zm8-14v14h4V5h-4z";
 #[allow(dead_code)]
-const ICON_STOP: &str =
-    "M6 6h12v12H6z";
+const ICON_STOP: &str = "M6 6h12v12H6z";
 #[allow(dead_code)]
-const ICON_REPLAY: &str =
-    "M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z";
-const ICON_SKIP_BACK: &str =
-    "M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z";
-const ICON_SKIP_FORWARD: &str =
-    "M4 18l8.5-6L4 6v12zm9-12v12l8.5-6-8.5-6z";
+const ICON_REPLAY: &str = "M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z";
+const ICON_SKIP_BACK: &str = "M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z";
+const ICON_SKIP_FORWARD: &str = "M4 18l8.5-6L4 6v12zm9-12v12l8.5-6-8.5-6z";
 #[allow(dead_code)]
-const ICON_VOLUME: &str =
-    "M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z";
-const ICON_MUTE: &str =
-    "M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z";
-const ICON_REPEAT: &str =
-    "M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z";
+const ICON_VOLUME: &str = "M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z";
+const ICON_MUTE: &str = "M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z";
+const ICON_REPEAT: &str = "M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z";
 
 /// How far the seek buttons of [`VideoWithControls`] move the clock.
 const SEEK_STEP: Duration = Duration::from_secs(5);
@@ -643,8 +634,16 @@ pub fn VideoMuteButton(handle: VideoPlayerHandle, modifier: Modifier) {
         move || {
             // Unicode glyphs stand in for SF Symbols: cranpose-ui has no vector
             // icon component, so a widely-supported glyph is the portable choice.
-            let glyph = if muted.get() { "\u{1F507}" } else { "\u{1F50A}" }; // 🔇 / 🔊
-            Text(glyph.to_owned(), Modifier::empty().padding(8.0), TextStyle::default());
+            let glyph = if muted.get() {
+                "\u{1F507}"
+            } else {
+                "\u{1F50A}"
+            }; // 🔇 / 🔊
+            Text(
+                glyph.to_owned(),
+                Modifier::empty().padding(8.0),
+                TextStyle::default(),
+            );
         },
     );
 }
@@ -664,8 +663,16 @@ pub fn VideoLoopButton(handle: VideoPlayerHandle, modifier: Modifier) {
             let _ = toggle.set_looping(next);
         },
         move || {
-            let glyph = if looping.get() { "\u{21BB}" } else { "\u{21BA}" }; // ↻ / ↺
-            Text(glyph.to_owned(), Modifier::empty().padding(8.0), TextStyle::default());
+            let glyph = if looping.get() {
+                "\u{21BB}"
+            } else {
+                "\u{21BA}"
+            }; // ↻ / ↺
+            Text(
+                glyph.to_owned(),
+                Modifier::empty().padding(8.0),
+                TextStyle::default(),
+            );
         },
     );
 }
@@ -684,18 +691,18 @@ pub fn VideoStopButton(handle: VideoPlayerHandle, modifier: Modifier) {
         move || {
             // A square glyph reads as "stop" across platforms and scripts.
             let glyph = if live { "\u{25A0}·" } else { "\u{25A0}" }; // ■ / ■·
-            Text(glyph.to_owned(), Modifier::empty().padding(8.0), TextStyle::default());
+            Text(
+                glyph.to_owned(),
+                Modifier::empty().padding(8.0),
+                TextStyle::default(),
+            );
         },
     );
 }
 
 /// Cycles playback speed through `speeds` for a caller-owned handle.
 #[composable]
-pub fn VideoSpeedButton(
-    handle: VideoPlayerHandle,
-    modifier: Modifier,
-    speeds: &'static [f32],
-) {
+pub fn VideoSpeedButton(handle: VideoPlayerHandle, modifier: Modifier, speeds: &'static [f32]) {
     let index = rememberMutableStateOf(|| 0usize);
     let setter = handle;
     let cursor = index.clone();
@@ -717,7 +724,11 @@ pub fn VideoSpeedButton(
             } else {
                 values[index.get() % values.len()]
             };
-            Text(format!("{shown:.2}x"), Modifier::empty().padding(8.0), TextStyle::default());
+            Text(
+                format!("{shown:.2}x"),
+                Modifier::empty().padding(8.0),
+                TextStyle::default(),
+            );
         },
     );
 }
@@ -787,24 +798,37 @@ pub fn VideoControlsPro(
                                 let player = bar.clone();
                                 let seek_step = step;
                                 match *element {
-                                    ProControl::PlayPause => control("\u{25B6}".to_owned(), move || {
-                                        let _ = player.toggle();
-                                    }),
+                                    ProControl::PlayPause => {
+                                        control("\u{25B6}".to_owned(), move || {
+                                            let _ = player.toggle();
+                                        })
+                                    }
                                     ProControl::Back => control("\u{226A}".to_owned(), move || {
-                                        let _ = player.seek(player.position().saturating_sub(seek_step));
+                                        let _ = player
+                                            .seek(player.position().saturating_sub(seek_step));
                                     }),
-                                    ProControl::Forward => control("\u{22A9}".to_owned(), move || {
-                                        let _ = player.seek(player.position() + seek_step);
-                                    }),
-                                    ProControl::Restart => control("\u{21BA}".to_owned(), move || {
-                                        let _ = player.seek(Duration::ZERO);
-                                        let _ = player.play();
-                                    }),
+                                    ProControl::Forward => {
+                                        control("\u{22A9}".to_owned(), move || {
+                                            let _ = player.seek(player.position() + seek_step);
+                                        })
+                                    }
+                                    ProControl::Restart => {
+                                        control("\u{21BA}".to_owned(), move || {
+                                            let _ = player.seek(Duration::ZERO);
+                                            let _ = player.play();
+                                        })
+                                    }
                                     ProControl::Stop => VideoStopButton(player, Modifier::empty()),
                                     ProControl::Mute => VideoMuteButton(player, Modifier::empty()),
-                                    ProControl::Volume => VideoVolumeSlider(player, Modifier::empty(), SliderSpec::default()),
+                                    ProControl::Volume => VideoVolumeSlider(
+                                        player,
+                                        Modifier::empty(),
+                                        SliderSpec::default(),
+                                    ),
                                     ProControl::Loop => VideoLoopButton(player, Modifier::empty()),
-                                    ProControl::Speed => VideoSpeedButton(player, Modifier::empty(), speeds),
+                                    ProControl::Speed => {
+                                        VideoSpeedButton(player, Modifier::empty(), speeds)
+                                    }
                                 }
                             }
                         }

@@ -5,8 +5,8 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 
 use cranpose_ui::{Modifier, Size, run_test_composition, widgets::slider::SliderSpec};
 use cranpose_video::{
-    GlassStyle, ProControl, VideoControls, VideoControlsOptions, VideoControlsPro,
-    VideoControlsLiquid, VideoLiquidAction, VideoLiquidIconButton, VideoLoopButton, VideoMuteButton,
+    GlassStyle, ProControl, VideoControls, VideoControlsLiquid, VideoControlsOptions,
+    VideoControlsPro, VideoLiquidAction, VideoLiquidIconButton, VideoLoopButton, VideoMuteButton,
     VideoProgressSliderWith, VideoSpeedButton, VideoStopButton, VideoVolumeSlider,
     rememberVideoPlayer,
 };
@@ -59,7 +59,9 @@ fn liquid_glass_controls_compose_with_vector_icons() {
         VideoControlsLiquid(
             handle,
             Modifier::empty(),
-            VideoControlsOptions::new().show_status(true).show_progress(true),
+            VideoControlsOptions::new()
+                .show_status(true)
+                .show_progress(true),
         );
     });
 }
@@ -68,7 +70,12 @@ fn liquid_glass_controls_compose_with_vector_icons() {
 fn a_single_liquid_icon_button_composes() {
     compose_and_measure(move || {
         let handle = rememberVideoPlayer(CLIP);
-        VideoLiquidIconButton(handle, Modifier::empty(), "\u{25B6}", VideoLiquidAction::Toggle);
+        VideoLiquidIconButton(
+            handle,
+            Modifier::empty(),
+            "\u{25B6}",
+            VideoLiquidAction::Toggle,
+        );
     });
 }
 

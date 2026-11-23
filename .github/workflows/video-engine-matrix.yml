@@ -1,0 +1,89 @@
+name: Video Engine — Cross-Platform Verification
+
+# Tests the cranpose-video engine on every supported target.
+# cargo check / test on native runners + cargo check cross-targets for mobile.
+# This is compile + unit verification, NOT real-device playback (documented).
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'cranpose-video/**'
+      - '.github/workflows/video-engine-matrix.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------- Native: full tests ----------
+  native-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check (all features)
+        run: cargo check --manifest-path cranpose-video/Cargo.toml --all-features
+      - name: Unit + integration tests
+        run: cargo test --manifest-path cranpose-video/Cargo.toml --features player,native-audio
+
+  native-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check (all features)
+        run: cargo check --manifest-path cranpose-video/Cargo.toml --all-features
+      - name: Tests
+        run: cargo test --manifest-path cranpose-video/Cargo.toml --features player,native-audio
+
+  native-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GStreamer dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
+      - name: Check (gstreamer)
+        run: cargo check --manifest-path cranpose-video/Cargo.toml --features player,native-audio,linux-gstreamer
+      - name: Tests
+        run: cargo test --manifest-path cranpose-video/Cargo.toml --features player,native-audio
+
+  # ---------- Cross compile: mobile + web ----------
+  cross-targets:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-ios
+            features: player,native-audio
+          - target: aarch64-linux-android
+            features: player,native-audio
+          - target: armv7-linux-androideabi
+            features: player,native-audio
+          - target: wasm32-unknown-unknown
+            features: widget
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cargo-ndk (Android only)
+        if: contains(matrix.target, 'android')
+        run: cargo install cargo-ndk --locked
+      - name: Check target ${{ matrix.target }}
+        run: cargo check --manifest-path cranpose-video/Cargo.toml --target ${{ matrix.target }} --no-default-features --features ${{ matrix.features }}
+
+  # ---------- WebAssembly build via wasm-pack ----------
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - name: Build WASM probe (engine detection path)
+        run: wasm-pack build cranpose-pwa/examples/probe --target web --out-dir /tmp/web-probe
