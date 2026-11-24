@@ -16,7 +16,7 @@ use std::{rc::Rc, time::Duration};
 use cranpose::LocalWindowState;
 use cranpose::prelude::*;
 use cranpose::liquid::prelude::*;
-use cranpose_video::{Video, VideoError, VideoPlayer, VideoState};
+use cranpose_video::{VideoError, VideoPlayer, VideoState};
 
 use super::{theme, widgets::small_button};
 use crate::app_model::{self, Clip, ClipKind};
@@ -124,8 +124,10 @@ pub(crate) fn LiquidPreviewSection() {
                         Modifier::empty(),
                         theme::heading_style(),
                     );
-                    // Video from cranpose-video uses the same cranpose runtime.
-                    Video(source.clone(), Modifier::empty().fill_max_width());
+                    // ISOLATION: no Video here for now — glass buttons only, to
+                    // verify whether the wgpu adapter-lock panic comes from the
+                    // video player being dropped while shader warm-up threads run.
+                    let _ = &source;
 
                     // Glass transport buttons from Cranpose's own liquid runtime.
                     let p = playing;
