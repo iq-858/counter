@@ -1,13 +1,16 @@
 name: Video Engine — Cross-Platform Verification
 
-# Tests the cranpose-video engine on every supported target.
-# cargo check / test on native runners + cargo check cross-targets for mobile.
-# This is compile + unit verification, NOT real-device playback (documented).
+# Compile + unit verification of the cranpose-video crate on every supported
+# target. This is NOT real-device playback testing (see README: Verification).
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'cranpose-video/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - '.github/workflows/video-engine-matrix.yml'
 
 permissions:
@@ -21,9 +24,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Check (all features)
-        run: cargo check --manifest-path cranpose-video/Cargo.toml --all-features
+        run: cargo check --all-features
       - name: Unit + integration tests
-        run: cargo test --manifest-path cranpose-video/Cargo.toml --features player,native-audio
+        run: cargo test --features player,native-audio
 
   native-macos:
     runs-on: macos-latest
@@ -31,9 +34,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Check (all features)
-        run: cargo check --manifest-path cranpose-video/Cargo.toml --all-features
+        run: cargo check --all-features
       - name: Tests (serial to avoid CI timing jitter)
-        run: cargo test --manifest-path cranpose-video/Cargo.toml --features player,native-audio -- --test-threads=1
+        run: cargo test --features player,native-audio -- --test-threads=1
 
   native-linux:
     runs-on: ubuntu-latest
@@ -47,9 +50,9 @@ jobs:
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
             libasound2-dev
       - name: Check (gstreamer)
-        run: cargo check --manifest-path cranpose-video/Cargo.toml --features player,native-audio,linux-gstreamer
+        run: cargo check --features player,native-audio,linux-gstreamer
       - name: Tests (serial to avoid CI timing jitter)
-        run: cargo test --manifest-path cranpose-video/Cargo.toml --features player,native-audio -- --test-threads=1
+        run: cargo test --features player,native-audio -- --test-threads=1
 
   # ---------- Cross compile: iOS (macOS runner has xcrun) ----------
   cross-ios:
@@ -60,7 +63,7 @@ jobs:
         with:
           targets: aarch64-apple-ios
       - name: Check iOS target
-        run: cargo check --manifest-path cranpose-video/Cargo.toml --target aarch64-apple-ios --no-default-features --features widget
+        run: cargo check --target aarch64-apple-ios --no-default-features --features widget
 
   # ---------- Cross compile: Android (Ubuntu with NDK clang) ----------
   cross-android:
@@ -97,7 +100,7 @@ jobs:
               export CC=$TOOLCHAIN/armv7a-linux-androideabi24-clang
               export AR=$TOOLCHAIN/llvm-ar ;;
           esac
-          cargo check --manifest-path cranpose-video/Cargo.toml --target ${{ matrix.target }} --no-default-features --features widget
+          cargo check --target ${{ matrix.target }} --no-default-features --features widget
 
   # ---------- Cross compile: wasm ----------
   cross-wasm:
@@ -108,16 +111,4 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - name: Check wasm target
-        run: cargo check --manifest-path cranpose-video/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features widget
-
-  # ---------- WebAssembly build via wasm-pack ----------
-  web-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: jetli/wasm-pack-action@v0.4.0
-      - name: Build WASM probe (engine detection path)
-        run: wasm-pack build cranpose-pwa/examples/probe --target web --out-dir /tmp/web-probe
+        run: cargo check --target wasm32-unknown-unknown --no-default-features --features widget

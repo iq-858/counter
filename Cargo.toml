@@ -1,30 +1,195 @@
 [package]
-name = "counter"
+name = "cranpose-video"
 version = "0.1.0"
 edition = "2024"
+license = "Apache-2.0 OR MIT"
+description = "Video playback for Cranpose through each platform's own media stack"
+readme = "README.md"
+publish = false
 
-[lib]
-path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+[[bin]]
+name = "cranpose-video"
+path = "src/main.rs"
+required-features = ["player", "desktop"]
 
 [features]
-default = ["desktop"]
-desktop = ["cranpose/desktop", "cranpose/renderer-wgpu", "cranpose/renderer-wgpu-gles", "cranpose/preview", "cranpose/hot-reload"]
-ios = ["cranpose/ios", "cranpose/renderer-wgpu"]
-android = ["cranpose/android", "cranpose/renderer-wgpu"]
+default = ["widget", "player"]
+# The composables that show a video, and the handle that drives one. A screen
+# that only decodes frames turns this off to leave the UI crates out.
+widget = ["dep:cranpose", "dep:cranpose-core", "dep:cranpose-ui"]
+# `cargo run -- <path or URL>`: one window that plays a source and carries the
+# sound it has. It builds on the widget composables, the window shell and the
+# audio path, so a build that only decodes frames turns it off.
+player = [
+    "widget",
+    "native-audio",
+    "dep:cranpose",
+]
+# The standalone `cargo run` demo window needs the desktop host and renderer.
+# This is kept out of `player` so an app can use VideoPlayer on iOS/Android
+# without pulling in cranpose/desktop, which collides with cranpose/ios.
+desktop = ["cranpose/renderer-wgpu", "cranpose/desktop"]
+# Linux ships no media framework, so its decoder is a GStreamer build behind
+# this feature. It needs libgstreamer1.0-dev, libgstreamer-plugins-base1.0-dev
+# and their plugins, which a base system does not carry. Without it the crate
+# builds and reports `VideoError::Unsupported` on Linux, and an application
+# supplies its own `VideoDecoder`.
+linux-gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", "dep:glib"]
+# Play the audio a source carries on native platforms with the same in-process
+# backend the rest of the app uses. Opt-in: a build that only draws pictures
+# pays nothing for an audio device. The browser plays sound itself and needs no
+# part of this feature.
+native-audio = ["dep:cranpose-media", "dep:cranpose-services", "dep:cpal"]
 
 [dependencies]
-anyhow = "1.0.104"
-cranpose = { version = "0.24.0", default-features = false }
-cranpose-animation = "0.24.0"
-cranpose-ui-layout = "0.24.0"
-cranpose-services = "0.24.0"
-cranpose-media = "0.24.0"
-cranpose-video = { path = "cranpose-video", features = ["native-audio"] }
+cranpose = { version = "0.24.0", optional = true, default-features = false, features = [
+    "embedded-default-font",
+] }
+cranpose-core = { version = "0.24.0", optional = true }
+cranpose-ui = { version = "0.24.0", optional = true }
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2.0.21"
+web-time = "1.1"
 
-[profile.dev]
-debug = 0
-incremental = true
+# Native audio reads the container the picture decoder reads, either the file
+# behind a plain source or the window of HLS fragments the crate joins. The
+# backend opens an output device only when a source is attached, so a build with
+# the feature still starts silently and never fails video because sound did.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cranpose-media = { version = "0.24.0", optional = true }
+cranpose-services = { version = "0.24.0", optional = true, default-features = false, features = ["http-native"] }
 
-[profile.dev.package."*"]
-opt-level = 2
+# Media Foundation is part of Windows and decodes H.264, HEVC, VP9, AV1 and
+# MPEG-2 through the same source reader the system players use.
+#
+# HLS is a playlist of small files, and the native decoders take one file, so
+# the crate fetches the playlist and the fragments itself. Every platform with a
+# decoder therefore carries an HTTP client. `ureq` is blocking, which is what
+# the decode thread wants, and its rustls build needs no system TLS.
+[target.'cfg(any(target_os = "windows", target_os = "android", target_os = "macos", target_os = "ios", target_os = "linux"))'.dependencies]
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Windows reads both the audio and video stream from one Media Foundation
+# source reader and renders the PCM through cpal. Optional so a build without
+# native-audio neither links an output device nor pulls in its dependencies.
+cpal = { version = "0.18.2", optional = true }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Shell",
+] }
+
+# The generic native-audio path polls cpal for the system default output so a
+# headphone switch can reopen the player on the new device. Windows declares
+# cpal above for its Media Foundation PCM path; macOS and Linux need the same
+# optional dependency here. Android is excluded because its AAudio backend
+# follows routes in the platform layer, iOS because its AVAudioEngine does, and
+# wasm has no native output at all (the browser owns sound in a `<video>`).
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+cpal = { version = "0.18.2", optional = true }
+
+# AVFoundation reads a file, decodes it to BGRA and reports the track's
+# natural size, which is the same stack QuickTime and Safari use.
+[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "watchos"))'.dependencies]
+objc2 = "0.6"
+# AVAudioSession route changes (headset unplug / Bluetooth) on iOS are observed
+# here so the audio source can be re-attached without a manual stop/play.
+objc2-avf-audio = { version = "0.3", default-features = false, features = [
+    "std",
+    "AVAudioSession",
+    "AVAudioSessionTypes",
+] }
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSData",
+    "NSDictionary",
+    "NSError",
+    "NSObject",
+    "NSString",
+    "NSURL",
+    "NSValue",
+    "NSNotification",
+    "NSOperation",
+] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-media",
+    "objc2-core-foundation",
+    "AVAsset",
+    "AVAssetReader",
+    "AVAssetReaderOutput",
+    "AVAssetTrack",
+    "AVMediaFormat",
+    "AVVideoSettings",
+    "AVPlayer",
+    "AVPlayerItem",
+    "AVPlayerItemOutput",
+    "objc2-core-media",
+    "objc2-core-video",
+] }
+objc2-core-media = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-video",
+    "CMSampleBuffer",
+    "CMTime",
+] }
+objc2-core-video = { version = "0.3", default-features = false, features = [
+    "std",
+    "CVBase",
+    "CVBuffer",
+    "CVImageBuffer",
+    "CVPixelBuffer",
+    "CVReturn",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFCGTypes",
+] }
+dispatch2 = "0.3"
+
+# MediaExtractor and MediaCodec are the Android framework's own demuxer and
+# hardware decoder, reached through the Java runtime the app already runs in.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4"
+ndk-context = "0.1.1"
+
+# The browser decodes through its own media pipeline: a detached <video>
+# element, drawn into a canvas and read back as RGBA.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "Blob",
+    "BlobPropertyBag",
+    "CanvasRenderingContext2d",
+    "Document",
+    "Element",
+    "Event",
+    "EventTarget",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlHeadElement",
+    "HtmlMediaElement",
+    "HtmlScriptElement",
+    "HtmlVideoElement",
+    "ImageData",
+    "MediaError",
+    "Node",
+    "Url",
+    "Window",
+] }
+
+[target.'cfg(all(target_os = "linux", not(target_arch = "wasm32")))'.dependencies]
+gstreamer = { version = "0.24", optional = true }
+gstreamer-app = { version = "0.24", optional = true }
+gstreamer-video = { version = "0.24", optional = true }
+glib = { version = "0.21", optional = true }

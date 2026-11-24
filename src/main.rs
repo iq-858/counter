@@ -1,25 +1,43 @@
-//! A Reels-style native window that exercises `cranpose-video`.
+//! One window that plays a source, and the buttons that drive it.
 //!
-//! The window has four sections: an offline vertical pager where only the
-//! settled page opens a decoder, a separate Live pager over the opt-in Free-TV
-//! IPTV channels, a full clip library, and an in-app paced decode test console.
-//!
-//! ```sh
-//! cargo run --release
-//! cargo run --release -- assets/videos/sintel.mp4
+//! ```text
+//! cargo run -- https://host/index.m3u8
+//! cargo run -- C:\clips\a.mp4
 //! ```
+//!
+//! With no argument it plays the clip the crate's tests ship, so a fresh
+//! checkout shows a picture without a file of its own. The source may be a
+//! file, a URL the platform decodes itself, or an HLS playlist this crate
+//! joins and decodes.
 
-use std::error::Error;
+use std::{env, error::Error, sync::OnceLock};
+
+use cranpose::{AppLauncher, prelude::*};
+use cranpose_video::VideoWithControls;
+
+/// What the player opens when it is given no argument.
+const DEFAULT_SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
+
+/// The source the window plays, set once before the window opens.
+static SOURCE: OnceLock<String> = OnceLock::new();
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Android enters through the `android_main!` macro in lib.rs; the shared
-    // `run()` helper is compiled out there.
-    #[cfg(not(target_os = "android"))]
-    {
-        counter::run()
-    }
-    #[cfg(target_os = "android")]
-    {
-        Ok(())
-    }
+    let source = env::args()
+        .nth(1)
+        .unwrap_or_else(|| DEFAULT_SOURCE.to_owned());
+    let _ = SOURCE.set(source);
+    AppLauncher::new()
+        .with_title("Cranpose video")
+        .with_size(960, 600)
+        .try_run(Player)?;
+    Ok(())
+}
+
+/// The screen: one video, filling the window.
+#[composable]
+fn Player() {
+    VideoWithControls(
+        SOURCE.get().cloned().unwrap_or_default(),
+        Modifier::empty().fill_max_size(),
+    );
 }
