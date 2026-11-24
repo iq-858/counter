@@ -16,7 +16,7 @@ use std::{rc::Rc, time::Duration};
 use cranpose::LocalWindowState;
 use cranpose::prelude::*;
 use cranpose_video::{
-    VideoControlsOptions, VideoError, VideoPlayer, VideoState, VideoWithLiquidOverlay,
+    VideoControlsOptions, VideoError, VideoPlayer, VideoState, VideoWithLiquidControls,
 };
 
 use super::{theme, widgets::small_button};
@@ -118,11 +118,10 @@ pub(crate) fn LiquidPreviewSection() {
                     Modifier::empty(),
                     theme::heading_style(),
                 );
-                VideoWithLiquidOverlay(
+                VideoWithLiquidControls(
                     source.clone(),
                     Modifier::empty().fill_max_width(),
                     VideoControlsOptions::new(),
-                    3000,
                 );
             }
         },
