@@ -905,6 +905,80 @@ pub fn VideoControlsLiquid(
     );
 }
 
+/// A ready-made video with LIQUID controls in one call: picture + frosted-glass
+/// transport bar. The additive counterpart of [`VideoWithControls`], which uses
+/// the traditional text buttons. No second decoder is opened.
+#[composable]
+pub fn VideoWithLiquidControls(
+    source: impl Into<VideoSource> + 'static,
+    modifier: Modifier,
+    options: VideoControlsOptions,
+) {
+    let handle = rememberVideoPlayer(source);
+    let picture_handle = handle.clone();
+    let controls_handle = handle;
+    Column(
+        modifier,
+        ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
+        {
+            move || {
+                picture(picture_handle.clone(), Modifier::empty());
+                VideoControlsLiquid(controls_handle.clone(), Modifier::empty(), options.clone());
+            }
+        },
+    );
+}
+
+/// A video with a floating liquid control bar OVER the picture that fades in
+/// when the picture is tapped and hides again after a short idle timeout.
+///
+/// Additive: [`VideoWithLiquidControls`] (controls below the picture) stays as
+/// it was. This variant uses `Box` to overlay the bar at the bottom and a
+/// `clickable` modifier on the picture to reveal it again.
+#[composable]
+pub fn VideoWithLiquidOverlay(
+    source: impl Into<VideoSource> + 'static,
+    modifier: Modifier,
+    options: VideoControlsOptions,
+    visible_ms: u64,
+) {
+    use cranpose_core::delay;
+
+    let handle = rememberVideoPlayer(source);
+    let visible = rememberMutableStateOf(|| true);
+    let reveal_handle = handle.clone();
+    let timer_state = visible.clone();
+
+    // Auto-hide after `visible_ms` of no interaction.
+    let hide_key = visible.get();
+    let tick = visible.clone();
+    LaunchedEffect(hide_key, async move |_| {
+        if tick.get() {
+            delay(Duration::from_millis(visible_ms)).await;
+            tick.set(false);
+        }
+    });
+
+    Box(
+        modifier.clickable(move |_| {
+            visible.set(true);
+        }),
+        BoxSpec::default(),
+        {
+            let picture_handle = reveal_handle;
+            let controls = handle;
+            let ctrl_visible = timer_state;
+            let opts = options;
+            move || {
+                picture(picture_handle.clone(), Modifier::empty());
+                if ctrl_visible.get() {
+                    VideoControlsLiquid(controls.clone(), Modifier::empty(), opts.clone());
+                }
+            }
+        },
+    );
+}
+
 /// One liquid-glass icon button with a press animation, for callers that want a
 /// single control (for example a custom overlay) rather than the full bar.
 #[composable]

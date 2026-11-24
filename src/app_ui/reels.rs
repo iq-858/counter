@@ -15,7 +15,9 @@ use std::{rc::Rc, time::Duration};
 
 use cranpose::LocalWindowState;
 use cranpose::prelude::*;
-use cranpose_video::{VideoError, VideoPlayer, VideoState};
+use cranpose_video::{
+    VideoControlsOptions, VideoError, VideoPlayer, VideoState, VideoWithLiquidOverlay,
+};
 
 use super::{theme, widgets::small_button};
 use crate::app_model::{self, Clip, ClipKind};
@@ -94,6 +96,33 @@ pub fn ReelsSection(initial_page: usize) {
                             InactiveReel(clip, page);
                         }
                     },
+                );
+            }
+        },
+    );
+}
+
+/// Preview of the liquid-glass control design: picture with a floating bar
+/// that hides after 3 seconds and reappears when the picture is tapped.
+#[composable]
+pub(crate) fn LiquidPreviewSection() {
+    let clip = app_model::CLIPS[0];
+    let source = app_model::resolved_source(&clip);
+    Column(
+        Modifier::empty().fill_max_size().padding(12.0),
+        ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
+        {
+            move || {
+                Text(
+                    "Liquid-glass controls — شريط عائم يختفي تلقائياً ويعود عند اللمس",
+                    Modifier::empty(),
+                    theme::heading_style(),
+                );
+                VideoWithLiquidOverlay(
+                    source.clone(),
+                    Modifier::empty().fill_max_width(),
+                    VideoControlsOptions::new(),
+                    3000,
                 );
             }
         },

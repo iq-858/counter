@@ -72,8 +72,8 @@ pub use widget::{
     GlassStyle, ProControl, Video, VideoControls, VideoControlsLiquid, VideoControlsOptions,
     VideoControlsPro, VideoLiquidAction, VideoLiquidIconButton, VideoLoopButton, VideoMuteButton,
     VideoPlayerHandle, VideoProgressSlider, VideoProgressSliderWith, VideoSpeedButton,
-    VideoStopButton, VideoVolumeSlider, VideoWithControls, progress_fraction_for,
-    rememberVideoPlayer,
+    VideoStopButton, VideoVolumeSlider, VideoWithControls, VideoWithLiquidControls,
+    VideoWithLiquidOverlay, progress_fraction_for, rememberVideoPlayer,
 };
 
 /// The platform whose decoder this build selected.

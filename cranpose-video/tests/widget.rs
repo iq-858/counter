@@ -8,7 +8,7 @@ use cranpose_video::{
     GlassStyle, ProControl, VideoControls, VideoControlsLiquid, VideoControlsOptions,
     VideoControlsPro, VideoLiquidAction, VideoLiquidIconButton, VideoLoopButton, VideoMuteButton,
     VideoProgressSliderWith, VideoSpeedButton, VideoStopButton, VideoVolumeSlider,
-    rememberVideoPlayer,
+    VideoWithLiquidControls, rememberVideoPlayer,
 };
 
 const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
@@ -47,6 +47,13 @@ fn pro_controls_compose_from_a_caller_owned_handle() {
                 .style(GlassStyle::Floating)
                 .elements(&[ProControl::PlayPause, ProControl::Mute, ProControl::Stop]),
         );
+    });
+}
+
+#[test]
+fn ready_made_liquid_video_composes_from_a_source() {
+    compose_and_measure(move || {
+        VideoWithLiquidControls(CLIP, Modifier::empty(), VideoControlsOptions::new());
     });
 }
 

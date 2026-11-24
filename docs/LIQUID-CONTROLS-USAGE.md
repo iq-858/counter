@@ -45,8 +45,14 @@ VideoLiquidIconButton(handle, Modifier::empty(), ICON, VideoLiquidAction::Toggle
 - أنيميشن `LiquidMotion::snappy()` عند الضغط.
 - `content_description` لكل زر (accessibility).
 
-## إن أردتَ الأدوات السائلة في counter فعلياً
-يجب تحويل `ActiveReel` في `src/app_ui/reels.rs` لاستخدام `rememberVideoPlayer` + `VideoPlayerHandle`
-بدل `Rc<Result<VideoPlayer,...>>`. هذا تغيير معماري في طريقة عمل الصفحة (كيفية الحصول على
-الإطارات) — لم أفعله لأنه يكسر «مفكك واحد لكل صفحة» الحالي ويتطلب إعادة تصميم مضخة الإطارات.
-مستعد لفعله في خطوة منفصلة إن وافقتَ على تغيير النموذج.
+## الأدوات السائلة في counter — مُطبَّقة الآن ✅
+أُضيف تبويب **Liquid** جديد في `src/app_ui/mod.rs` يعرض `reels::LiquidPreviewSection()`:
+```rust
+VideoWithLiquidOverlay(source, Modifier::empty().fill_max_width(),
+                       VideoControlsOptions::new(), 3000);
+```
+- الشريط **فوق الفيديو** (عبر `Box` + `content_alignment`).
+- **يختفي بعد 3 ثوان** (`LaunchedEffect` + `delay`), و**يعود عند لمس الصورة** (`clickable`).
+- `Reels` الأصلي بقي كما هو — إضافة غير كاسرة.
+
+`VideoWithLiquidOverlay` متاحة أيضاً لأي مشروع آخر عبر `cranpose-video`.
