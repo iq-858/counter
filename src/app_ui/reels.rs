@@ -15,9 +15,8 @@ use std::{rc::Rc, time::Duration};
 
 use cranpose::LocalWindowState;
 use cranpose::prelude::*;
-use cranpose_video::{VideoError, VideoPlayer, VideoState, VideoWithControls};
-#[cfg(not(target_os = "windows"))]
-use cranpose_video::{VideoControlsOptions, VideoWithLiquidControls};
+use cranpose::liquid::prelude::*;
+use cranpose_video::{Video, VideoError, VideoPlayer, VideoState};
 
 use super::{theme, widgets::small_button};
 use crate::app_model::{self, Clip, ClipKind};
@@ -102,33 +101,53 @@ pub fn ReelsSection(initial_page: usize) {
     );
 }
 
-/// Preview of the liquid-glass control design: picture with a floating bar
-/// that hides after 3 seconds and reappears when the picture is tapped.
+/// Preview of the liquid-glass control design, using Cranpose's OWN liquid
+/// runtime (`cranpose::liquid::prelude::*`) exactly like the official
+/// `LiquidUiTab` — this is the pattern that runs without the wgpu Surface panic.
 #[composable]
 pub(crate) fn LiquidPreviewSection() {
     let clip = app_model::CLIPS[0];
     let source = app_model::resolved_source(&clip);
-    Column(
-        Modifier::empty().fill_max_size().padding(12.0),
-        ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
-        {
-            move || {
-                Text(
-                    "Liquid-glass controls — شريط عائم يختفي تلقائياً ويعود عند اللمس",
-                    Modifier::empty(),
-                    theme::heading_style(),
-                );
-                #[cfg(target_os = "windows")]
-                VideoWithControls(source.clone(), Modifier::empty().fill_max_width());
-                #[cfg(not(target_os = "windows"))]
-                VideoWithLiquidControls(
-                    source.clone(),
-                    Modifier::empty().fill_max_width(),
-                    VideoControlsOptions::new(),
-                );
-            }
-        },
-    );
+    let playing = remember(|| mutableStateOf(true)).with(|s| *s);
+    let muted = remember(|| mutableStateOf(false)).with(|s| *s);
+
+    LiquidTheme(LiquidThemeSpec::system(SchemeMode::Dark), move || {
+        Column(
+            Modifier::empty().fill_max_size().padding(12.0),
+            ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
+            {
+                let playing = playing;
+                let muted = muted;
+                move || {
+                    Text(
+                        "Liquid-glass controls — تصميم Cranpose الأصلي",
+                        Modifier::empty(),
+                        theme::heading_style(),
+                    );
+                    // Video from cranpose-video uses the same cranpose runtime.
+                    Video(source.clone(), Modifier::empty().fill_max_width());
+
+                    // Glass transport buttons from Cranpose's own liquid runtime.
+                    let p = playing;
+                    let m = muted;
+                    GlassIconButtonGroup(
+                        Modifier::empty(),
+                        GlassIconButtonGroupSpec::default(),
+                        move |scope| {
+                            let play = p;
+                            scope.action(icons::CHECK, "Play / pause", move || {
+                                play.set(!play.get());
+                            });
+                            let mute = m;
+                            scope.action(icons::SETTINGS, "Mute", move || {
+                                mute.set(!mute.get());
+                            });
+                        },
+                    );
+                }
+            },
+        );
+    });
 }
 
 /// A human-readable page indicator, kept pure for unit testing.
