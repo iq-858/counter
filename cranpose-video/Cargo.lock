@@ -1120,7 +1120,6 @@ dependencies = [
  "cpal",
  "cranpose",
  "cranpose-core",
- "cranpose-liquid",
  "cranpose-media",
  "cranpose-services",
  "cranpose-ui",

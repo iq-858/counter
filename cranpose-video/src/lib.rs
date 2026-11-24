@@ -69,11 +69,8 @@ pub use subtitle::{SubtitleCue, active_at, parse as parse_subtitles};
 pub use telemetry::{EventRecord, PlaybackDiagnostics, PlaybackEvent, SessionId};
 #[cfg(feature = "widget")]
 pub use widget::{
-    GlassStyle, ProControl, Video, VideoControls, VideoControlsLiquid, VideoControlsOptions,
-    VideoControlsPro, VideoLiquidAction, VideoLiquidIconButton, VideoLoopButton, VideoMuteButton,
-    VideoPlayerHandle, VideoProgressSlider, VideoProgressSliderWith, VideoSpeedButton,
-    VideoStopButton, VideoVolumeSlider, VideoWithControls, VideoWithLiquidControls,
-    VideoWithLiquidOverlay, progress_fraction_for, rememberVideoPlayer,
+    Video, VideoControls, VideoPlayerHandle, VideoProgressSlider, VideoProgressSliderWith,
+    VideoWithControls, progress_fraction_for, rememberVideoPlayer,
 };
 
 /// The platform whose decoder this build selected.

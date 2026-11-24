@@ -16,7 +16,7 @@ required-features = ["player", "desktop"]
 default = ["widget", "player"]
 # The composables that show a video, and the handle that drives one. A screen
 # that only decodes frames turns this off to leave the UI crates out.
-widget = ["dep:cranpose", "dep:cranpose-core", "dep:cranpose-ui", "dep:cranpose-liquid"]
+widget = ["dep:cranpose", "dep:cranpose-core", "dep:cranpose-ui"]
 # `cargo run -- <path or URL>`: one window that plays a source and carries the
 # sound it has. It builds on the widget composables, the window shell and the
 # audio path, so a build that only decodes frames turns it off.
@@ -47,7 +47,6 @@ cranpose = { version = "0.24.0", optional = true, default-features = false, feat
 ] }
 cranpose-core = { version = "0.24.0", optional = true }
 cranpose-ui = { version = "0.24.0", optional = true }
-cranpose-liquid = { version = "0.24.0", optional = true }
 parking_lot = "0.12.5"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2.0.21"

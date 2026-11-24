@@ -28,9 +28,6 @@ enum Section {
     Library,
     Tests,
     Errors,
-    /// Liquid-glass controls demo (floating bar, auto-hide, tap to reveal).
-    #[cfg(not(target_os = "windows"))]
-    Liquid,
 }
 
 /// Maps the optional CLI clip to a starting pager page.
@@ -85,19 +82,11 @@ pub fn AppRoot() {
                         let library = section.clone();
                         let tests = section.clone();
                         let errors = section.clone();
-                        #[cfg(not(target_os = "windows"))]
-                        let liquid = section.clone();
                         move || {
                             section_tab("Reels", Section::Reels, reels.clone());
                             section_tab("Live", Section::Live, live.clone());
                             section_tab("Library", Section::Library, library.clone());
                             section_tab("Decode tests", Section::Tests, tests.clone());
-                            // Liquid tab is hidden on Windows: switching to a glass-shader
-                            // tab triggers cranpose-warm-up to lock the wgpu GLES
-                            // AdapterContext from a background thread, which deadlocks
-                            // and panics on Windows. Kept on other platforms.
-                            #[cfg(not(target_os = "windows"))]
-                            section_tab("Liquid", Section::Liquid, liquid.clone());
                             let err_count = crate::app_diag::recent_lines().len();
                             section_tab(
                                 if err_count > 0 { "Errors !" } else { "Errors" },
@@ -113,8 +102,6 @@ pub fn AppRoot() {
                     Section::Library => library::LibrarySection(initial_clip_label()),
                     Section::Tests => tests_console::TestsSection(),
                     Section::Errors => errors::ErrorsSection(),
-                    #[cfg(not(target_os = "windows"))]
-                    Section::Liquid => reels::LiquidPreviewSection(),
                 }
             }
         },
