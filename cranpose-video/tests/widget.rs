@@ -4,7 +4,7 @@
 use std::{cell::Cell, rc::Rc, time::Duration};
 
 use cranpose_ui::{Modifier, Size, run_test_composition, widgets::slider::SliderSpec};
-use cranpose_video::{VideoControls, VideoProgressSliderWith, rememberVideoPlayer};
+use cranpose_video::{VideoControls, VideoFrame, VideoProgressSliderWith, rememberVideoPlayer};
 
 const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
 
@@ -26,6 +26,16 @@ fn ready_made_controls_compose_from_an_existing_handle() {
     run_test_composition(move || {
         let handle = rememberVideoPlayer(CLIP);
         VideoControls(handle, Modifier::empty());
+    });
+}
+
+#[test]
+fn picture_composes_from_a_caller_owned_handle() {
+    // The building block for custom designs: one handle draws the picture and
+    // can drive custom controls without opening a second player.
+    run_test_composition(move || {
+        let handle = rememberVideoPlayer(CLIP);
+        VideoFrame(handle, Modifier::empty());
     });
 }
 

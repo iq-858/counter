@@ -183,6 +183,18 @@ pub fn Video(source: impl Into<VideoSource> + 'static, modifier: Modifier) {
     picture(rememberVideoPlayer(source), modifier);
 }
 
+/// Draws the picture of a player the screen already owns.
+///
+/// [`Video`] is the shortcut that opens its own private handle from a source.
+/// Use this instead when you keep a [`VideoPlayerHandle`] from
+/// `rememberVideoPlayer` and want to place your OWN controls around the
+/// picture: it draws the same frames as `Video` but lets one handle drive both
+/// picture and controls, so there is only one player for the source.
+#[composable]
+pub fn VideoFrame(handle: VideoPlayerHandle, modifier: Modifier) {
+    picture(handle, modifier);
+}
+
 /// Plays a video above the buttons that drive it.
 ///
 /// A screen that wants other controls composes [`Video`] beside them instead.

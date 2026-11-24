@@ -98,20 +98,69 @@ fn screen() {
 }
 ```
 
-A screen that wants other controls takes the handle and composes `Video` beside its own widgets. The handle opens the file once, keeps the position across recompositions, and closes the player when the composable leaves.
+A screen that wants its own controls takes a handle from `rememberVideoPlayer`, draws the picture with `VideoFrame`, and composes its own widgets beside it. One handle drives both. The handle opens the file once, keeps the position across recompositions, and closes the player when the composable leaves.
 
 ```rust,no_run
-use cranpose_video::rememberVideoPlayer;
+use cranpose::{composable, prelude::*};
+use cranpose_video::{VideoFrame, VideoPlayerHandle, rememberVideoPlayer};
 use std::time::Duration;
 
-fn controls(path: &'static str) -> Result<(), cranpose_video::VideoError> {
-    let video = rememberVideoPlayer(path);
-    video.play()?;
-    video.seek(Duration::from_secs(10))?;
-    video.pause()?;
-    Ok(())
+// `rememberVideoPlayer` opens the source ONCE (keyed by source) and returns a
+// VideoPlayerHandle. It does NOT draw anything by itself.
+// `VideoFrame(handle, ..)` draws the picture for THAT handle — so the picture
+// and your custom controls share one player. (`Video(source, ..)` is the
+// shortcut that opens a private handle when you need no custom controls.)
+#[composable]
+fn MyPlayer(source: &'static str) {
+    let handle: VideoPlayerHandle = rememberVideoPlayer(source);
+
+    // Draw the picture for this handle. The composable owns the frame pump
+    // (`take_frame -> ImageBitmap`) internally — no manual thread needed.
+    VideoFrame(handle.clone(), Modifier::empty().fill_max_width());
+
+    // The handle is a CONTROL surface: it drives the player while `VideoFrame` draws.
+    // Every method returns Result except pure getters.
+    let _ = handle.play();                                   // start / resume
+    let _ = handle.pause();                                  // hold the picture
+    let _ = handle.toggle();                                 // play <-> pause
+    let _ = handle.seek(Duration::from_secs(10));            // absolute position
+    let _ = handle.seek_fraction(0.5);                       // 0.0..=1.0 of media
+    let _ = handle.set_speed(1.5);                           // playback rate
+    let _ = handle.set_looping(true);                        // repeat at end
+    let _ = handle.set_muted(true);                          // silence backend audio
+    let _ = handle.set_volume(0.8);                          // 0.0..=1.0
+
+    // Pure getters (no Result):
+    let _pos: Duration = handle.position();
+    let _dur: Option<Duration> = handle.duration();
+    let _speed: f32 = handle.speed();
+    let _muted: bool = handle.is_muted();
+    let _volume: f32 = handle.volume();
+    let _looping: bool = handle.is_looping();
+    let _state = handle.state();                             // VideoState
+    let _info = handle.info();                               // VideoInfo
+    let _size = handle.decoded_size();                       // live resolution
 }
 ```
+
+### VideoPlayerHandle — ملخص الدوال
+
+| الدالة | المعنى |
+|---|---|
+| `play` / `pause` / `toggle` | تشغيل / إيقاف مؤقت / تبديل |
+| `seek(Duration)` / `seek_fraction(f32)` | قفزة زمنية / بنسبة من المدة |
+| `set_speed(f32)` / `speed()` | السرعة |
+| `set_looping(bool)` / `is_looping()` | التكرار |
+| `set_muted(bool)` / `is_muted()` | الكتم |
+| `set_volume(f32)` / `volume()` | مستوى الصوت |
+| `position()` / `duration()` | الموضع / المدة (None للبث الحي) |
+| `state()` / `info()` / `decoded_size()` | الحالة / معلومات الملف / أبعاد الإطار الحالية |
+
+القواعد:
+- `rememberVideoPlayer(source)` يفتح مفكّكاً واحداً في موقع الاستدعاء، ويُعيد استخدامه ما دام المصدر نفسه — تغيير المصدر يُسقط القديم ويغلق خيوطه.
+- `VideoFrame(handle, ..)` هي التي ترسم وتضخّ الإطارات لهذا المقبض — لا تحتاج كتابة `LaunchedEffect` بنفسك.
+- استخدم **مقبضاً واحداً** للصورة ولأزرارك: `VideoFrame(handle, ..)` + دوال `handle`. لا تخلط `Video(source, ..)` مع `rememberVideoPlayer(source)` — كل منهما يفتح مفكّكاً مستقلاً.
+- المقبض يُغلق تلقائياً عند خروج الـ composable.
 
 The `widget` feature carries this module and is on by default. A screen that only decodes frames turns it off and uses `VideoPlayer` below, which pulls no UI crates.
 
