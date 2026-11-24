@@ -7,8 +7,8 @@ mod errors;
 mod library;
 mod live;
 mod reels;
-mod theme;
 mod tests_console;
+mod theme;
 mod widgets;
 
 use std::sync::OnceLock;
@@ -89,11 +89,7 @@ pub fn AppRoot() {
                             section_tab("Decode tests", Section::Tests, tests.clone());
                             let err_count = crate::app_diag::recent_lines().len();
                             section_tab(
-                                if err_count > 0 {
-                                    "Errors !"
-                                } else {
-                                    "Errors"
-                                },
+                                if err_count > 0 { "Errors !" } else { "Errors" },
                                 Section::Errors,
                                 errors.clone(),
                             );
@@ -155,9 +151,6 @@ mod tests {
     fn fallback_page_is_the_original_default_clip() {
         // The static is unset in unit tests, so the fallback is used.
         assert_eq!(initial_page(), 2);
-        assert_eq!(
-            initial_clip_label(),
-            app_model::CLIPS[2].source.to_owned()
-        );
+        assert_eq!(initial_clip_label(), app_model::CLIPS[2].source.to_owned());
     }
 }

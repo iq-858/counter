@@ -108,7 +108,11 @@ fn live_error_strip() {
 
 /// A human-readable page indicator, kept pure for unit testing.
 fn live_page_label(settled: usize, page_count: usize) -> String {
-    format!("LIVE · page {} of {}", settled.saturating_add(1), page_count)
+    format!(
+        "LIVE · page {} of {}",
+        settled.saturating_add(1),
+        page_count
+    )
 }
 
 /// Pulls the category out of the author label, e.g.
@@ -145,14 +149,8 @@ mod tests {
 
     #[test]
     fn category_is_taken_from_the_author_label() {
-        assert_eq!(
-            category_of(&app_model::LIVE_CHANNELS[0]),
-            "Arabic news"
-        );
-        assert_eq!(
-            category_of(&app_model::LIVE_CHANNELS[8]),
-            "UAE"
-        );
+        assert_eq!(category_of(&app_model::LIVE_CHANNELS[0]), "Arabic news");
+        assert_eq!(category_of(&app_model::LIVE_CHANNELS[8]), "UAE");
         // A label without the separator falls back to the whole author string.
         let plain = Clip {
             author: "Plain author",

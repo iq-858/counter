@@ -19,7 +19,11 @@ pub fn LibrarySection(initial: String) {
         ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
         {
             move || {
-                Text("LIBRARY · clip catalogue", Modifier::empty(), theme::heading_style());
+                Text(
+                    "LIBRARY · clip catalogue",
+                    Modifier::empty(),
+                    theme::heading_style(),
+                );
                 Text(
                     format!(
                         "{total} entries · {offline} offline · {opt_in} opt-in test stream · {live} live channels"
@@ -68,7 +72,11 @@ fn ClipCard(clip: Clip, index: usize) {
                 theme::muted_style(),
             );
             Text(
-                format!("format: {} · source kind: {}", clip.format, kind_label(clip.kind)),
+                format!(
+                    "format: {} · source kind: {}",
+                    clip.format,
+                    kind_label(clip.kind)
+                ),
                 Modifier::empty(),
                 theme::muted_style(),
             );
@@ -96,7 +104,9 @@ fn catalogue_split() -> (usize, usize, usize) {
 
 /// Whether an entry belongs to the live channel list. Pure for unit testing.
 fn is_live(clip: &Clip) -> bool {
-    app_model::LIVE_CHANNELS.iter().any(|live| live.id == clip.id)
+    app_model::LIVE_CHANNELS
+        .iter()
+        .any(|live| live.id == clip.id)
 }
 
 /// Stable label for a source kind, pure for unit testing.
@@ -115,10 +125,7 @@ mod tests {
     fn kind_labels_are_stable_and_distinct() {
         assert_eq!(kind_label(ClipKind::LocalMp4), "local MP4 (offline)");
         assert_eq!(kind_label(ClipKind::Hls), "HLS (network, opt-in)");
-        assert_ne!(
-            kind_label(ClipKind::LocalMp4),
-            kind_label(ClipKind::Hls)
-        );
+        assert_ne!(kind_label(ClipKind::LocalMp4), kind_label(ClipKind::Hls));
     }
 
     #[test]

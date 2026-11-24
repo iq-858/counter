@@ -1163,6 +1163,7 @@ dependencies = [
  "objc2-core-video",
  "objc2-foundation 0.3.2",
  "parking_lot",
+ "serde",
  "thiserror 2.0.21",
  "ureq",
  "wasm-bindgen",

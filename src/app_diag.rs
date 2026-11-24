@@ -35,7 +35,10 @@ fn screen() -> &'static Mutex<Vec<String>> {
 
 /// Returns a snapshot of the most recent lines (oldest first) for the UI.
 pub(crate) fn recent_lines() -> Vec<String> {
-    screen().lock().map(|lines| lines.clone()).unwrap_or_default()
+    screen()
+        .lock()
+        .map(|lines| lines.clone())
+        .unwrap_or_default()
 }
 
 /// Clears the on-screen history (the file log is never touched).
@@ -72,7 +75,10 @@ pub(crate) fn init() {
             log_path().display()
         ),
     );
-    eprintln!("[diagnostics] writing runtime log to {}", log_path().display());
+    eprintln!(
+        "[diagnostics] writing runtime log to {}",
+        log_path().display()
+    );
 }
 
 fn install_panic_hook() {

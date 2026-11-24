@@ -13,8 +13,8 @@
 
 use std::{rc::Rc, time::Duration};
 
-use cranpose::prelude::*;
 use cranpose::LocalWindowState;
+use cranpose::prelude::*;
 use cranpose_video::{VideoError, VideoPlayer, VideoState};
 
 use super::{theme, widgets::small_button};
@@ -102,7 +102,11 @@ pub fn ReelsSection(initial_page: usize) {
 
 /// A human-readable page indicator, kept pure for unit testing.
 fn page_label(settled: usize, page_count: usize) -> String {
-    format!("REELS · page {} of {}", settled.saturating_add(1), page_count)
+    format!(
+        "REELS · page {} of {}",
+        settled.saturating_add(1),
+        page_count
+    )
 }
 
 /// The one page that owns playback. Also used by the Live section.
@@ -182,7 +186,10 @@ pub(crate) fn ActiveReel(clip: Clip) {
                     Ok(image) => pump_picture.set(Some(image)),
                     Err(error) => crate::app_diag::error(
                         "reels.frame",
-                        format!("{}: {}x{} bitmap failed: {error}", pump_log_key, width, height),
+                        format!(
+                            "{}: {}x{} bitmap failed: {error}",
+                            pump_log_key, width, height
+                        ),
                     ),
                 }
             }
@@ -239,9 +246,7 @@ pub(crate) fn ActiveReel(clip: Clip) {
                         Some(image) => Image(
                             image,
                             None,
-                            Modifier::empty()
-                                .fill_max_width()
-                                .height(picture_height()),
+                            Modifier::empty().fill_max_width().height(picture_height()),
                             Alignment::CENTER,
                             ContentScale::Fit,
                             1.0,

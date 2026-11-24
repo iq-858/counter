@@ -27,15 +27,20 @@ pub fn ErrorsSection() {
     let _pump = ticks.get();
 
     let lines = app_diag::recent_lines();
-    let error_count = lines.iter().filter(|l| l.contains("ERROR") || l.contains("PANIC")).count();
-    let clear = {
-        move || app_diag::clear_screen()
-    };
+    let error_count = lines
+        .iter()
+        .filter(|l| l.contains("ERROR") || l.contains("PANIC"))
+        .count();
+    let clear = { move || app_diag::clear_screen() };
     Column(
         Modifier::empty().fill_max_size().padding(12.0),
         ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
         move || {
-            Text("Diagnostics & errors", Modifier::empty(), theme::heading_style());
+            Text(
+                "Diagnostics & errors",
+                Modifier::empty(),
+                theme::heading_style(),
+            );
             Text(
                 format!(
                     "{} line(s) · {} error(s) — refreshes automatically",

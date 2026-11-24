@@ -131,7 +131,11 @@ pub fn TestsSection() {
             let running = running.clone();
             let message = message.clone();
             move || {
-                Text("DECODE TESTS · paced first-frame sweep", Modifier::empty(), theme::heading_style());
+                Text(
+                    "DECODE TESTS · paced first-frame sweep",
+                    Modifier::empty(),
+                    theme::heading_style(),
+                );
                 Text(
                     "Per-clip player open, play, and first-frame timeout. Local files only — no HLS, no network.",
                     Modifier::empty(),
@@ -208,7 +212,10 @@ pub fn TestsSection() {
                                 );
                                 Text(row.detail.clone(), Modifier::empty(), theme::muted_style());
                                 Text(
-                                    format!("decoded size: {}", app_model::format_resolution(row.size)),
+                                    format!(
+                                        "decoded size: {}",
+                                        app_model::format_resolution(row.size)
+                                    ),
                                     Modifier::empty(),
                                     theme::muted_style(),
                                 );
