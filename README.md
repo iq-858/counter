@@ -9,7 +9,7 @@ This crate gives you two ways to play video:
 
 Both layers use the same decoder per platform. The UI layer does not add a second player: a handle is a cloneable wrapper around one `VideoPlayer`, and the picture composable drives that same player's frame pump.
 
-> Scope note: this repository contains this crate only. It is **compile + unit-test verified** on CI. Real-device playback is reported separately and is not claimed by the matrix.
+> Scope note: this repository contains this crate only. The crate has been **tested on real devices on Windows and iOS** by the maintainer. The CI matrix below is a separate compile + unit-test signal; a green or red CI job does not replace or negate that device testing.
 
 ---
 
@@ -82,12 +82,21 @@ Historical evidence from the earlier app-containing repository layout (those wor
 | `cranpose-build.yml`, iOS debug, run **45302179025** | **PASS** (7m36s) — produced an `.ipa`. |
 | `Build Android APK`, run **45046825409** | **PASS** (21m56s) — produced a signed `.apk`. |
 
+### Device testing
+
+| Platform | Device-tested | Notes |
+|---|---|---|
+| **Windows** | **Yes** | Playback tested by the maintainer on a real Windows machine. |
+| **iOS** | **Yes** | Playback tested by the maintainer on a real iOS device, using an `.ipa` from a successful `cranpose-build.yml` run. |
+| macOS / Linux / Android / Web | Not device-tested here | These appear only in the CI matrix above. |
+
 What this means, honestly:
 
+- **Windows and iOS playback is device-verified** by the maintainer. This is independent of CI.
 - **Windows, Linux, WebAssembly and Android compile + test green** on CI.
-- **macOS** compiles; its two pacing tests are unreliable on the CI runner.
-- **iOS** compile-check with the reduced widget feature set fails on one Objective-C observer method; a full iOS app build succeeded earlier with a different feature set.
-- No automated real-device playback test exists in this repository. Do not read a green compile job as a device-tested claim.
+- **macOS** compiles; two timing assertions in `tests/pacing.rs` are unreliable on that CI runner. No macOS device test is claimed.
+- The **iOS widget-only cross-check** fails on one Objective-C observer method in this reduced feature set. That is a build-configuration issue, **not** a failure of the iOS playback that was tested on device with the full app feature set.
+- There is no automated device-test job in this repository. A CI job is never presented as a substitute for the device results above.
 
 ---
 
@@ -335,10 +344,10 @@ The engine layer (`VideoPlayer`, `VideoSource`, decoders) does not depend on Cra
 ## Known limitations
 
 - macOS pacing tests are timing-sensitive and failed on the CI runner in run 45308233149.
-- The widget-only iOS cross-check fails on `NSNotificationCenter` observer availability; the full iOS app build succeeded earlier with a larger feature set.
+- The widget-only iOS CI cross-check fails on `NSNotificationCenter` observer availability with the reduced feature set; iOS playback itself was device-tested with the full app feature set and works.
 - Linux needs `linux-gstreamer` plus GStreamer dev packages for decoding.
 - watchOS has no video decoder (`is_supported()` is false).
-- GPU zero-copy, HDR device rendering and real-device performance numbers are **not implemented or verified** here.
+- GPU zero-copy and HDR device rendering are **not implemented or verified** here. Playback is device-tested on Windows and iOS; no quantitative performance numbers are claimed.
 - No arbitrary HTTP headers can be attached to a `VideoSource`; use signed URLs.
 
 ## License
