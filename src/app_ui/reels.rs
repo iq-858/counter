@@ -15,7 +15,6 @@ use std::{rc::Rc, time::Duration};
 
 use cranpose::LocalWindowState;
 use cranpose::prelude::*;
-use cranpose::liquid::prelude::*;
 use cranpose_video::{VideoError, VideoPlayer, VideoState};
 
 use super::{theme, widgets::small_button};
@@ -99,57 +98,6 @@ pub fn ReelsSection(initial_page: usize) {
             }
         },
     );
-}
-
-/// Preview of the liquid-glass control design, using Cranpose's OWN liquid
-/// runtime (`cranpose::liquid::prelude::*`) exactly like the official
-/// `LiquidUiTab` — this is the pattern that runs without the wgpu Surface panic.
-#[composable]
-pub(crate) fn LiquidPreviewSection() {
-    let clip = app_model::CLIPS[0];
-    let source = app_model::resolved_source(&clip);
-    let playing = remember(|| mutableStateOf(true)).with(|s| *s);
-    let muted = remember(|| mutableStateOf(false)).with(|s| *s);
-
-    LiquidTheme(LiquidThemeSpec::system(SchemeMode::Dark), move || {
-        Column(
-            Modifier::empty().fill_max_size().padding(12.0),
-            ColumnSpec::new().vertical_arrangement(LinearArrangement::SpacedBy(8.0)),
-            {
-                let playing = playing;
-                let muted = muted;
-                move || {
-                    Text(
-                        "Liquid-glass controls — تصميم Cranpose الأصلي",
-                        Modifier::empty(),
-                        theme::heading_style(),
-                    );
-                    // ISOLATION: no Video here for now — glass buttons only, to
-                    // verify whether the wgpu adapter-lock panic comes from the
-                    // video player being dropped while shader warm-up threads run.
-                    let _ = &source;
-
-                    // Glass transport buttons from Cranpose's own liquid runtime.
-                    let p = playing;
-                    let m = muted;
-                    GlassIconButtonGroup(
-                        Modifier::empty(),
-                        GlassIconButtonGroupSpec::default(),
-                        move |scope| {
-                            let play = p;
-                            scope.action(icons::CHECK, "Play / pause", move || {
-                                play.set(!play.get());
-                            });
-                            let mute = m;
-                            scope.action(icons::SETTINGS, "Mute", move || {
-                                mute.set(!mute.get());
-                            });
-                        },
-                    );
-                }
-            },
-        );
-    });
 }
 
 /// A human-readable page indicator, kept pure for unit testing.
