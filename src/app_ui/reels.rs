@@ -15,9 +15,9 @@ use std::{rc::Rc, time::Duration};
 
 use cranpose::LocalWindowState;
 use cranpose::prelude::*;
-use cranpose_video::{
-    VideoControlsOptions, VideoError, VideoPlayer, VideoState, VideoWithLiquidControls,
-};
+use cranpose_video::{VideoError, VideoPlayer, VideoState, VideoWithControls};
+#[cfg(not(target_os = "windows"))]
+use cranpose_video::{VideoControlsOptions, VideoWithLiquidControls};
 
 use super::{theme, widgets::small_button};
 use crate::app_model::{self, Clip, ClipKind};
@@ -118,6 +118,9 @@ pub(crate) fn LiquidPreviewSection() {
                     Modifier::empty(),
                     theme::heading_style(),
                 );
+                #[cfg(target_os = "windows")]
+                VideoWithControls(source.clone(), Modifier::empty().fill_max_width());
+                #[cfg(not(target_os = "windows"))]
                 VideoWithLiquidControls(
                     source.clone(),
                     Modifier::empty().fill_max_width(),
