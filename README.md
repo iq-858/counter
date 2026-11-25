@@ -122,7 +122,7 @@ Constructors: `VideoSource::path(...)`, `VideoSource::url(...)`, `VideoSource::b
 | `set_muted(bool)`, `set_volume(f32)` | Audio carried by the backend. |
 | `take_frame()` | Take the newest decoded `VideoFrame`; call every frame you want to draw. |
 | `position()`, `duration()`, `state()`, `is_playing()`, `info()`, `decoded_size()` | Live reads. `duration()` is `None` for live streams; `is_playing()` is the Media3-style `isPlaying` convenience derived from `state()`. |
-| `is_closed()`, `close()` | Lifecycle; `close()` needs `&mut self`. |
+| `is_closed()`, `close()` | Lifecycle; `close()` needs `&mut self`. `state()` reads `Idle` after close. `VideoPlayerHandle` has no explicit close — it closes with its player on composable exit. |
 
 ```rust,no_run
 use cranpose_video::{VideoPlayer, VideoState};

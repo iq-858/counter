@@ -291,7 +291,11 @@ impl Shared {
     /// Signals a close before detaching from the decode thread.
     pub(crate) fn begin_shutdown(&self) {
         self.shutdown.store(true, Ordering::Relaxed);
-        self.inner.lock().recovering = false;
+        let mut inner = self.inner.lock();
+        inner.recovering = false;
+        // Nothing decodes after shutdown, so a stale Playing/Paused state would
+        // be a lie. Idle is the neutral state for a closed player.
+        inner.state = VideoState::Idle;
     }
 
     /// A clone of the recovery handle, handed to the decoder and its worker.
