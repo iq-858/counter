@@ -7,7 +7,7 @@
 
 use std::{
     collections::VecDeque,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -70,19 +70,19 @@ struct Inner {
 /// A bounded event log shared by clones.
 #[derive(Debug, Clone)]
 pub struct EventBus {
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>,
 }
 
 impl EventBus {
     /// A log holding at most `capacity` events.
     pub fn new(capacity: usize) -> Self {
         Self {
-            inner: Mutex::new(Inner {
+            inner: Arc::new(Mutex::new(Inner {
                 events: VecDeque::with_capacity(capacity.max(1)),
                 capacity: capacity.max(1),
                 next: 1,
                 coalesce_position: true,
-            }),
+            })),
         }
     }
 
