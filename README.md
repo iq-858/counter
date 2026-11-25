@@ -390,6 +390,19 @@ Rule: **use one handle for both picture and controls**. Calling `Video(source, .
 
 HLS caveat: `rememberVideoPlayer` always calls `open`, never `open_hls`. A server URL like `/stream?id=123` is therefore treated as a plain file and will fail. Either make the URL path end in `.m3u8` before the query, or use the engine layer and call `VideoPlayer::open_hls` yourself.
 
+### Other exported clusters
+
+The crate root also exports these groups; each has rustdoc at its source file:
+
+- **Colour and frame formats** (`src/color.rs`, `src/frame.rs`): `ColorInfo`, `HdrMetadata`, `ColorPrimaries`, `TransferFunction`, `ChromaLocation`, `ColorMatrix`, `ColorRange`, `PixelFormat`, `YuvColor`. `VideoFrame` exposes `format()`, `color()`, `rgba()`, `into_rgba()`. `ImageBitmap::from_rgba8` is used by the built-in picture composable; `set_native_nv12` / `native_nv12` are available on `VideoPlayer` for backends that carry native frames.
+- **Explicit reads** (`src/decode_result.rs`): `ReadOutcome` and `FrameStamp` distinguish no frame, a new frame, and a timestamp from an ambiguous empty buffer.
+- **Resources** (`src/resource.rs`): `VideoResourceManager`, `ResourceLimits`, `PrefetchGuard` bound decoder slots, frame bytes and prefetches. `PlayerPool` wraps them with audio ownership.
+- **Session and recovery** (`src/session.rs`, available on non-Linux/native targets): `PlaybackSession`, `PlaybackState`, `InterruptionReason`, `SessionEvent`, `RECOVERY_COOLDOWN`, `RECOVERY_COOLDOWN_MAX`. Audio route changes and interruptions are handled here.
+- **Telemetry** (`src/telemetry.rs`): `PlaybackDiagnostics`, `EventRecord`, `PlaybackEvent`, `SessionId` expose counters, timings, pixel format and an ordered event history via `VideoPlayer::diagnostics()` / `events()`.
+- **Player extras** (`src/player.rs`): `is_live()`, `is_seekable()`, `speed()`, `is_muted()`, `volume()`, `media_info()`, `loop_range()`, `recycle(frame)`, `set_audio_group(...)`, `note_route_changed()`.
+
+`PlayerPool::promote` returns a **non-owning view** of the slot. Keep or drop it; dropping it does not release the slot or steal audio ownership. Only the handle from `reserve` owns the slot. This is intentional so a temporary returned by `promote(...)` cannot silence the promoted page.
+
 ---
 
 ## Scenarios

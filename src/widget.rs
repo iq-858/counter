@@ -315,9 +315,14 @@ pub fn VideoProgressSlider(handle: VideoPlayerHandle, modifier: Modifier) {
     let duration_state = has_duration.clone();
     let duration_handle = handle.clone();
     LaunchedEffect(duration_handle.clone(), async move |scope| {
+        // The container states its duration once. Stop polling as soon as it
+        // is known; a new source restarts this effect through the handle key.
         loop {
             scope.with_frame_nanos(|_| ()).await;
-            duration_state.set(duration_handle.duration().is_some());
+            if duration_handle.duration().is_some() {
+                duration_state.set(true);
+                break;
+            }
         }
     });
     let spec = SliderSpec::new()
@@ -353,10 +358,12 @@ pub fn VideoProgressSliderWith(
         loop {
             scope.with_frame_nanos(|_| ()).await;
             if !effect_dragging.get() {
-                effect_progress.set(progress_fraction_for(
-                    effect_handle.position(),
-                    effect_handle.duration(),
-                ));
+                let next = progress_fraction_for(effect_handle.position(), effect_handle.duration());
+                // A paused player has a frozen clock. Publishing the same
+                // fraction every frame would recompose the slider for nothing.
+                if next != effect_progress.get() {
+                    effect_progress.set(next);
+                }
             }
         }
     });
