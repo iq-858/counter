@@ -492,6 +492,14 @@ cache.put("segment-1", &bytes)?;
 These are building blocks, not a complete DASH player: scheduling, segment
 fetching and synchronization remain application or platform-backend work.
 
+### Preparing incomplete files
+
+`PreloadManager` tracks a source that arrives in pieces: `begin` returns a
+generation, `offer_chunk` appends bytes, `finish` returns the full buffer once,
+and `mark_prepared` records that a player slot was opened from it. A cancelled
+attempt bumps its generation, so late chunks and completions are rejected and
+their bytes are released. It performs no network I/O itself.
+
 ### Capability reporting
 
 `VideoCapabilities::detect()` reports what the **selected backend** can be

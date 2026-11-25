@@ -39,6 +39,7 @@ mod loop_range;
 mod media;
 mod pixels;
 mod playback_params;
+mod preload;
 mod platform;
 mod pool;
 mod player;
@@ -98,6 +99,7 @@ pub use logfile::{is_logging, log_note, log_path, start_log_file, stop_log_file}
 pub use loop_range::{LoopRange, MIN_RANGE};
 pub use media::{Container, MediaInfo};
 pub use playback_params::{MAX_SPEED, MIN_SPEED, PlaybackParameters};
+pub use preload::{PreloadManager, PreloadStage};
 pub use platform::Platform;
 pub use player::VideoPlayer;
 pub use pool::{PlayerPool, PooledPlayer};
