@@ -405,6 +405,11 @@ handle.attach_hardware_frames(frames); // same API, GPU path
 VideoFrame(handle, Modifier::empty().fill_max_width());
 ```
 
+`HardwareVideo::open_stream(codec, width, height, annex_b)` is the direct
+hardware-decode entry point: it splits an elementary H.264/HEVC stream into
+access units and feeds Cranpose's official decoder on a worker. Container
+demuxing is still the caller's responsibility.
+
 `HardwareVideo` wraps Cranpose 0.28's `VideoDecoder`: `submit(AccessUnit)`
 feeds the hardware decoder, `frames()` returns `DecodedFrames` for the surface,
 and `wait_for_frame().await` uses the decoder's own wake-up instead of polling.

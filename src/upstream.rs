@@ -6,7 +6,12 @@
 //! its `DecodedFrames` to `VideoHardwareSurface` (`cranpose::PlayerSurface`).
 //! No frame is copied through this crate on that path.
 
-use cranpose_services::{AccessUnit, DecodedFrames, DecoderConfig, DecoderError, VideoCodec, VideoDecoder, VideoFrame as UpstreamVideoFrame};
+use std::time::Duration;
+
+use cranpose_services::{
+    AccessUnit, DecodedFrames, DecoderConfig, DecoderError, DecoderOutput, VideoCodec, VideoDecoder,
+    VideoFrame as UpstreamVideoFrame,
+};
 
 /// A hardware decoder together with the handle that receives its pictures.
 pub struct HardwareVideo {
@@ -18,6 +23,34 @@ impl HardwareVideo {
     /// Opens the hardware decoder for `config`.
     pub fn new(config: DecoderConfig) -> Result<Self, DecoderError> {
         let decoder = VideoDecoder::new(config)?;
+        let frames = decoder.frames();
+        Ok(Self { decoder, frames })
+    }
+
+    /// Opens the official fast decoder for an elementary Annex-B stream.
+    ///
+    /// `split_access_units` cuts H.264/HEVC into pictures; each is submitted
+    /// with a rising timestamp and a frame index as metadata. This is the real
+    /// hardware-decode path: no CPU RGBA conversion happens in this crate.
+    /// Demuxing a container into an elementary stream is the caller's job.
+    pub fn open_stream(
+        codec: VideoCodec,
+        width: u32,
+        height: u32,
+        stream: &[u8],
+    ) -> Result<Self, DecoderError> {
+        let config = DecoderConfig::new(codec, width, height, DecoderOutput::Frames { depth: 6 });
+        let mut decoder = VideoDecoder::new(config)?;
+        let units = cranpose_services::split_access_units(codec, stream);
+        let mut timestamp = Duration::ZERO;
+        for (index, data) in units.iter().enumerate() {
+            decoder.submit(AccessUnit {
+                data,
+                timestamp,
+                metadata: index as u64,
+            })?;
+            timestamp += Duration::from_millis(40);
+        }
         let frames = decoder.frames();
         Ok(Self { decoder, frames })
     }
