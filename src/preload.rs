@@ -29,6 +29,7 @@ pub enum PreloadStage {
     Cancelled,
 }
 
+#[derive(Debug)]
 struct Entry {
     generation: u64,
     stage: PreloadStage,
