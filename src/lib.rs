@@ -51,6 +51,8 @@ mod state;
 mod stream_policy;
 mod subtitle;
 mod telemetry;
+#[cfg(feature = "upstream-video")]
+mod upstream;
 #[cfg(any(
     target_os = "windows",
     target_os = "macos",
@@ -80,7 +82,10 @@ pub use diagnostics::set_diagnostic_sink;
 #[cfg(feature = "upstream-video")]
 pub use cranpose::PlayerSurface as VideoHardwareSurface;
 #[cfg(feature = "upstream-video")]
-pub use cranpose_services::{DecoderConfig, DecoderOutput, DecodedFrames};
+pub use cranpose_services::{
+    AccessUnit, DecoderCapabilities, DecoderConfig, DecoderError, DecoderOutput, DecodedFrames,
+    DecoderStats, VideoCodec as UpstreamVideoCodec,
+};
 pub use error::VideoError;
 pub use events::{EventBus, PlaybackEventKind, PlaybackEventRecord};
 pub use feed::{
@@ -108,6 +113,8 @@ pub use state::VideoState;
 pub use stream_policy::{BufferSnapshot, StreamChoice, StreamPolicy};
 pub use subtitle::{SubtitleCue, active_at, parse as parse_subtitles};
 pub use telemetry::{EventRecord, PlaybackDiagnostics, PlaybackEvent, SessionId};
+#[cfg(feature = "upstream-video")]
+pub use upstream::HardwareVideo;
 pub use tracks::{TrackInfo, TrackKind, TrackList};
 #[cfg(feature = "widget")]
 pub use widget::{

@@ -402,6 +402,11 @@ use cranpose_video::VideoHardwareSurface;
 VideoHardwareSurface(frames, Modifier::empty().fill_max_width(), ContentScale::Fit);
 ```
 
+`HardwareVideo` wraps Cranpose 0.28's `VideoDecoder`: `submit(AccessUnit)`
+feeds the hardware decoder, `frames()` returns `DecodedFrames` for the surface,
+and `wait_for_frame().await` uses the decoder's own wake-up instead of polling.
+`HardwareVideo::capabilities(codec)` reports device limits from the platform.
+
 That path is supplied by Cranpose's own hardware decode foundation (Metal on
 Apple, Vulkan AHardwareBuffer import on Android) and does not pass through this
 crate's CPU RGBA buffer. It is **not** claimed as verified on a device here:
