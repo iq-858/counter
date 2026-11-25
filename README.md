@@ -390,6 +390,19 @@ Rule: **use one handle for both picture and controls**. Calling `Video(source, .
 
 HLS caveat: `rememberVideoPlayer` always calls `open`, never `open_hls`. A server URL like `/stream?id=123` is therefore treated as a plain file and will fail. Either make the URL path end in `.m3u8` before the query, or use the engine layer and call `VideoPlayer::open_hls` yourself.
 
+### Controller and streaming policy
+
+`PlaybackController` is a small trait implemented by both `VideoPlayer` and
+`VideoPlayerHandle`, so a UI layer can drive either through one interface.
+`VideoSurface` plus `CpuSurface` name a presentation target and its size; this
+is an abstraction only and does not claim GPU access.
+
+`StreamPolicy` joins `LoadControl` (when playback may start and whether to keep
+reading ahead) with `AbrController` (which representation to fetch). It accepts
+both native `Representation` values and DASH representations converted from
+`parse_mpd`. It makes decisions; the streaming backend still performs the
+downloads and decoding.
+
 ### Event delivery
 
 `EventBus` is a bounded, clone-shared log of `PlaybackEventRecord`s. It publishes
