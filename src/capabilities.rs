@@ -10,10 +10,15 @@ use crate::{Platform, is_supported, platform};
 /// Codecs this crate's API can name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VideoCodec {
+    /// H.264 / AVC.
     H264,
+    /// H.265 / HEVC.
     Hevc,
+    /// VP9.
     Vp9,
+    /// AV1.
     Av1,
+    /// MPEG-2 video.
     Mpeg2,
 }
 
@@ -22,7 +27,7 @@ pub enum VideoCodec {
 pub enum DecoderKind {
     /// The platform's own hardware-assisted media stack.
     Platform,
-    /// A software decoder supplied by the platform's media framework.
+    /// A software decoder provided by the platform's media framework.
     Software,
     /// An application-supplied decoder through `VideoPlayer::with_decoder`.
     Application,
