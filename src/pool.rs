@@ -28,6 +28,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use std::collections::HashMap;
+
+use crate::player::VideoPlayer;
 use crate::resource::{Priority, ResourceLimits, VideoResourceManager};
 
 /// The shared state behind every slot handle.
@@ -41,6 +44,8 @@ struct PoolShared {
     state: Mutex<PoolState>,
     limits: ResourceLimits,
     next_id: AtomicU64,
+    /// Players attached to slots. Only one player can be audible at a time.
+    players: Mutex<HashMap<u64, VideoPlayer>>,
 }
 
 impl PoolShared {
@@ -177,6 +182,7 @@ impl PlayerPool {
                 }),
                 limits,
                 next_id: AtomicU64::new(1),
+                players: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -275,6 +281,73 @@ impl PlayerPool {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Reserves a player slot and opens a real player on the next slot call.
+    pub fn reserve_player(&self, priority: Priority) -> PooledPlayer {
+        self.reserve(priority)
+    }
+
+    /// Attaches a `VideoPlayer` to an existing slot. Returns false when the
+    /// slot was released or the pool is full.
+    pub fn attach_player(&self, id: u64, player: VideoPlayer) -> bool {
+        let state = self.shared.lock();
+        if !state.manager.ranked().contains(&id) {
+            return false;
+        }
+        drop(state);
+        if let Ok(mut players) = self.shared.players.lock() {
+            players.insert(id, player);
+        }
+        true
+    }
+
+    /// Runs `f` with the player attached to `id`, if any.
+    pub fn with_player<T>(&self, id: u64, f: impl FnOnce(&VideoPlayer) -> T) -> Option<T> {
+        self.shared
+            .players
+            .lock()
+            .ok()
+            .and_then(|players| players.get(&id).map(|player| f(player)))
+    }
+
+    /// Id of the audible slot, if any (see [`PlayerPool::audible`]).
+    pub fn current_active_player(&self) -> Option<u64> {
+        self.audible()
+    }
+
+    /// Id of the next slot that has a player but is not the audible one.
+    pub fn next_prepared_player(&self) -> Option<u64> {
+        let audible = self.audible();
+        self.ranked().into_iter().find(|id| *id != audible && {
+            self.shared
+                .players
+                .lock()
+                .map_or(false, |players| players.contains_key(id))
+        })
+    }
+
+    /// Calls `player.play()` on the slot and makes it the audible owner.
+    pub fn resume_player(&self, id: u64) -> Option<()> {
+        self.promote(id, Priority::Active)?;
+        self.with_player(id, |player| {
+            let _ = player.play();
+        })
+    }
+
+    /// Calls `player.pause()` on the slot without changing its priority.
+    pub fn suspend_player(&self, id: u64) -> Option<()> {
+        self.with_player(id, |player| {
+            let _ = player.pause();
+        })
+    }
+
+    /// Releases the player and the slot together.
+    pub fn release_player(&self, id: u64) {
+        if let Ok(mut players) = self.shared.players.lock() {
+            players.remove(&id);
+        }
+        self.release(id);
+    }
 }
 
 #[cfg(test)]
@@ -342,6 +415,23 @@ mod tests {
         drop(slot);
         assert_eq!(pool.len(), 0);
         assert!(!pool.ranked().contains(&id));
+    }
+
+    #[test]
+    fn a_real_player_can_be_attached_resumed_and_released() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
+        if let Ok(player) = VideoPlayer::open(path) {
+            let pool = PlayerPool::new();
+            let slot = pool.reserve_player(Priority::Active);
+            assert!(pool.attach_player(slot.id(), player));
+            assert_eq!(pool.current_active_player(), Some(slot.id()));
+            assert!(pool.resume_player(slot.id()).is_some());
+            let next = pool.reserve_player(Priority::Next);
+            assert!(pool.promote(next.id(), Priority::Active).is_some());
+            assert_eq!(pool.audible(), Some(next.id()));
+            pool.release_player(next.id());
+            assert!(!pool.ranked().contains(&next.id()));
+        }
     }
 
     #[test]

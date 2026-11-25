@@ -321,6 +321,12 @@ Use this alongside the **one visible player** rule in the Reels scenario: the
 pool bounds how many clips may stay warm, while the pager decides which of them
 actually composes a picture.
 
+New player-connected methods on `PlayerPool`:
+`reserve_player`, `attach_player`, `with_player`, `resume_player` (calls
+`player.play()` and makes the slot audible), `suspend_player` (calls
+`player.pause()`), `release_player`, `current_active_player`,
+`next_prepared_player`. The audio owner is the slot whose player is playing.
+
 #### Events
 
 Three variants join `PlaybackEvent`, so a diagnostics screen sees these
