@@ -201,6 +201,11 @@ pub(crate) struct Shared {
     /// unchanged, and a decoder that ignores it behaves as before.
     #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
     playback: PlaybackSession,
+    /// Frames from Cranpose 0.28's hardware decoder. When present, the same
+    /// `VideoFrame` composable presents them through `PlayerSurface` instead of
+    /// the CPU RGBA path; that path remains the fallback.
+    #[cfg(feature = "upstream-video")]
+    hardware_frames: std::sync::RwLock<Option<cranpose_services::DecodedFrames>>,
 }
 
 impl Shared {
@@ -238,6 +243,8 @@ impl Shared {
             shutdown: Arc::new(AtomicBool::new(false)),
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             playback: PlaybackSession::new(),
+            #[cfg(feature = "upstream-video")]
+            hardware_frames: std::sync::RwLock::new(None),
         };
         // The first event a session records. The clock starts at zero, so the
         // record needs no state read beyond the one the helper already makes.
@@ -1158,6 +1165,28 @@ impl VideoPlayer {
     /// Whether [`close`](Self::close) ran, or the decode thread is gone.
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Relaxed)
+    }
+
+    /// Attaches frames from Cranpose 0.28's hardware decoder to this player.
+    ///
+    /// The existing composables then present those frames with the GPU-backed
+    /// `PlayerSurface`; no CPU RGBA copy is made. The CPU path stays in place
+    /// and is used whenever no hardware frames are attached.
+    #[cfg(feature = "upstream-video")]
+    pub fn attach_hardware_frames(&self, frames: cranpose_services::DecodedFrames) {
+        if let Ok(mut stored) = self.shared.hardware_frames.write() {
+            *stored = Some(frames);
+        }
+    }
+
+    /// The hardware frames attached to this player, if any.
+    #[cfg(feature = "upstream-video")]
+    pub fn hardware_frames(&self) -> Option<cranpose_services::DecodedFrames> {
+        self.shared
+            .hardware_frames
+            .read()
+            .ok()
+            .and_then(|stored| stored.clone())
     }
 
     /// Starts or resumes playback.

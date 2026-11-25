@@ -147,6 +147,23 @@ impl VideoPlayerHandle {
         self.player().map_or(false, VideoPlayer::is_playing)
     }
 
+    /// Attaches hardware frames so the existing picture composables use the
+    /// Cranpose 0.28 GPU path; without it they fall back to CPU RGBA.
+    #[cfg(feature = "upstream-video")]
+    pub fn attach_hardware_frames(&self, frames: cranpose_services::DecodedFrames) {
+        if let Ok(player) = self.player() {
+            player.attach_hardware_frames(frames);
+        }
+    }
+
+    /// The hardware frames attached to this handle, if any.
+    #[cfg(feature = "upstream-video")]
+    pub fn hardware_frames(&self) -> Option<cranpose_services::DecodedFrames> {
+        self.player()
+            .ok()
+            .and_then(VideoPlayer::hardware_frames)
+    }
+
     /// How fast the clock runs.
     pub fn speed(&self) -> f32 {
         self.player().map_or(1.0, VideoPlayer::speed)
@@ -477,6 +494,14 @@ impl PartialEq for Poster {
 fn picture_with(handle: VideoPlayerHandle, modifier: Modifier, poster: Option<Poster>) {
     let picture = rememberMutableStateOf(|| None::<ImageBitmap>);
     let failure = handle.player().err();
+    // The same composable serves both paths: when a caller attaches frames
+    // from Cranpose 0.28's hardware decoder, present them through the GPU
+    // surface; otherwise keep the tested CPU RGBA frame pump below.
+    #[cfg(feature = "upstream-video")]
+    if let Some(hardware) = handle.hardware_frames() {
+        cranpose::PlayerSurface(hardware, modifier, ContentScale::Fit);
+        return;
+    }
     let frames = handle;
     // Key the frame pump on the handle so a new source stops the old loop and
     // starts one bound to the reopened player. A unit key would keep pumping

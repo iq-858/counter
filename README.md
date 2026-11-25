@@ -398,14 +398,24 @@ On the `v028-migration` line, the `upstream-video` feature re-exports Cranpose
 upstream `DecodedFrames` source can present it directly:
 
 ```text
-use cranpose_video::VideoHardwareSurface;
-VideoHardwareSurface(frames, Modifier::empty().fill_max_width(), ContentScale::Fit);
+use cranpose_video::{VideoFrame, rememberVideoPlayer};
+
+let handle = rememberVideoPlayer(source);
+handle.attach_hardware_frames(frames); // same API, GPU path
+VideoFrame(handle, Modifier::empty().fill_max_width());
 ```
 
 `HardwareVideo` wraps Cranpose 0.28's `VideoDecoder`: `submit(AccessUnit)`
 feeds the hardware decoder, `frames()` returns `DecodedFrames` for the surface,
 and `wait_for_frame().await` uses the decoder's own wake-up instead of polling.
 `HardwareVideo::capabilities(codec)` reports device limits from the platform.
+
+The **same public API** now drives both paths. Attach those frames with
+`player.attach_hardware_frames(frames)` or
+`handle.attach_hardware_frames(frames)`; from then on `VideoFrame`, `Video`,
+`VideoWithControls`, the progress slider and the stock controls keep working,
+but the picture is drawn by `PlayerSurface` instead of the CPU RGBA pump.
+Without attached frames the previous path remains the fallback, unchanged.
 
 That path is supplied by Cranpose's own hardware decode foundation (Metal on
 Apple, Vulkan AHardwareBuffer import on Android) and does not pass through this
