@@ -84,9 +84,9 @@ const STALL_60: Duration = Duration::from_millis(200);
 // the player legitimately re-anchors. Keep the assertions meaningful on the
 // other runners and allow that documented runner jitter on macOS.
 #[cfg(target_os = "macos")]
-const REANCHOR_ALLOWANCE: usize = 32;
+const REANCHOR_ALLOWANCE: u64 = 32;
 #[cfg(not(target_os = "macos"))]
-const REANCHOR_ALLOWANCE: usize = 0;
+const REANCHOR_ALLOWANCE: u64 = 0;
 #[cfg(target_os = "macos")]
 const STALL_RECOVERY_RATIO: f64 = 6.0;
 #[cfg(not(target_os = "macos"))]

@@ -8,14 +8,17 @@ mod audio;
 // exist (not wasm, which plays in the browser).
 #[cfg(not(target_arch = "wasm32"))]
 mod arbitration;
+mod abr;
 mod audio_focus;
 mod buffer;
 mod cache;
 mod capabilities;
 mod color;
+mod dash;
 mod decode_result;
 mod decoder;
 mod diagnostics;
+mod disk_cache;
 mod error;
 mod frame;
 mod feed;
@@ -59,12 +62,15 @@ mod tracks;
 pub mod widget;
 
 pub use buffer::{Buffering, BufferingState};
+pub use abr::{AbrConfig, AbrController, AbrMode, Representation};
 pub use audio_focus::{AudioFocus, AudioFocusState};
 pub use cache::MediaCache;
 pub use capabilities::{DecoderKind, VideoCapabilities, VideoCodec};
 pub use color::{ChromaLocation, ColorInfo, ColorPrimaries, HdrMetadata, TransferFunction};
+pub use dash::{DashManifest, DashRepresentation, parse_mpd};
 pub use decode_result::{FrameStamp, ReadOutcome};
 pub use decoder::{DecodedFrame, VideoDecoder};
+pub use disk_cache::DiskCache;
 pub(crate) use diagnostics::diag;
 pub use diagnostics::set_diagnostic_sink;
 pub use error::VideoError;

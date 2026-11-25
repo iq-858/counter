@@ -390,6 +390,31 @@ Rule: **use one handle for both picture and controls**. Calling `Video(source, .
 
 HLS caveat: `rememberVideoPlayer` always calls `open`, never `open_hls`. A server URL like `/stream?id=123` is therefore treated as a plain file and will fail. Either make the URL path end in `.m3u8` before the query, or use the engine layer and call `VideoPlayer::open_hls` yourself.
 
+### DASH, ABR and disk cache
+
+Three more engine layers are available without new dependencies:
+
+- `parse_mpd(&str)` reads an MPD's representations, segment template,
+  initialization segment and static/dynamic flag. It is structural parsing
+  only — no segment download or decode is performed.
+- `AbrController` with `Representation`, `AbrMode` and `AbrConfig` implements a
+  conservative selector: downgrades react immediately, upgrades require several
+  good throughput samples and enough buffered media. Fixed `Lowest`, `Medium`
+  and `Highest` modes are also available.
+- `DiskCache` writes payloads under a root directory with safe encoded keys and
+  atomic rename, and evicts oldest files when the byte budget is exceeded.
+
+```text
+let manifest = parse_mpd(mpd_text)?;
+let mut abr = AbrController::new(AbrConfig::default());
+let index = abr.sample(throughput_bps, buffer_millis, &reps);
+let cache = DiskCache::open("./cache", 512 * 1024 * 1024)?;
+cache.put("segment-1", &bytes)?;
+```
+
+These are building blocks, not a complete DASH player: scheduling, segment
+fetching and synchronization remain application or platform-backend work.
+
 ### Capability reporting
 
 `VideoCapabilities::detect()` reports what the **selected backend** can be
