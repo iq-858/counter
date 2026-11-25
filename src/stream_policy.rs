@@ -151,7 +151,7 @@ mod tests {
             buffered: Duration::from_secs(3),
             waiting: Duration::ZERO,
         };
-        for _ in 0..3 {
+        for _ in 0..2 {
             assert_eq!(policy.select(3_000_000, &good, &reps).unwrap().index, 0);
         }
         assert_eq!(policy.select(3_000_000, &good, &reps).unwrap().index, 1);

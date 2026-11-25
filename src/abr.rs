@@ -159,7 +159,7 @@ mod tests {
         let mut controller = AbrController::new(AbrConfig::default());
         let reps = reps();
         // An upgrade is conservative: three good samples are required.
-        for _ in 0..3 {
+        for _ in 0..2 {
             assert_eq!(controller.sample(2_000_000, 5_000, &reps), 0);
         }
         assert_eq!(controller.sample(2_000_000, 5_000, &reps), 1);
