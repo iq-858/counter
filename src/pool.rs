@@ -318,7 +318,7 @@ impl PlayerPool {
     /// Id of the next slot that has a player but is not the audible one.
     pub fn next_prepared_player(&self) -> Option<u64> {
         let audible = self.audible();
-        self.ranked().into_iter().find(|id| *id != audible && {
+        self.ranked().into_iter().find(|id| Some(*id) != audible && {
             self.shared
                 .players
                 .lock()

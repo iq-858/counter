@@ -7,7 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{PreloadManager, PreloadStage};
+use crate::PreloadManager;
+#[cfg(test)]
+use crate::PreloadStage;
 
 /// How far ahead the feed prepares at each stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +131,9 @@ impl PreloadCoordinator {
 
     /// Advances a key if the requested level is allowed at its distance.
     pub fn advance(&mut self, key: &str, to: PreloadLevel) -> bool {
-        let Some(task) = self.tasks.get_mut(key) else {
+        // Check with an immutable borrow before taking the mutable one, so
+        // `self.allowed(...)` does not borrow `self` twice.
+        let Some(task) = self.tasks.get(key) else {
             return false;
         };
         if to <= task.level || !self.allowed(task.distance, to) {
@@ -137,14 +141,11 @@ impl PreloadCoordinator {
         }
         let generation = self.generations.get(key).copied().unwrap_or(0);
         if to >= PreloadLevel::Bytes {
-            self.manager
-                .mark_prepared(key, generation)
-                .then_some(())
-                .or_else(|| {
-                    self.manager.offer_chunk(key, generation, &[]).then_some(())
-                });
+            let _ = self.manager.offer_chunk(key, generation, &[]);
         }
-        task.level = to;
+        if let Some(task) = self.tasks.get_mut(key) {
+            task.level = to;
+        }
         true
     }
 
