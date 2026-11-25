@@ -8,7 +8,9 @@ mod audio;
 // exist (not wasm, which plays in the browser).
 #[cfg(not(target_arch = "wasm32"))]
 mod arbitration;
+mod audio_focus;
 mod buffer;
+mod cache;
 mod color;
 mod decode_result;
 mod decoder;
@@ -24,6 +26,7 @@ mod frame;
 ))]
 mod hls;
 mod info;
+mod load_control;
 mod logfile;
 mod loop_range;
 mod media;
@@ -54,6 +57,8 @@ mod tracks;
 pub mod widget;
 
 pub use buffer::{Buffering, BufferingState};
+pub use audio_focus::{AudioFocus, AudioFocusState};
+pub use cache::MediaCache;
 pub use color::{ChromaLocation, ColorInfo, ColorPrimaries, HdrMetadata, TransferFunction};
 pub use decode_result::{FrameStamp, ReadOutcome};
 pub use decoder::{DecodedFrame, VideoDecoder};
@@ -62,6 +67,7 @@ pub use diagnostics::set_diagnostic_sink;
 pub use error::VideoError;
 pub use frame::{ColorMatrix, ColorRange, PixelFormat, VideoFrame, YuvColor};
 pub use info::{FrameRate, Rotation, VideoInfo};
+pub use load_control::LoadControl;
 pub use logfile::{is_logging, log_note, log_path, start_log_file, stop_log_file};
 pub use loop_range::{LoopRange, MIN_RANGE};
 pub use media::{Container, MediaInfo};

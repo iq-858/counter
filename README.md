@@ -403,6 +403,43 @@ The crate root also exports these groups; each has rustdoc at its source file:
 
 `PlayerPool::promote` returns a **non-owning view** of the slot. Keep or drop it; dropping it does not release the slot or steal audio ownership. Only the handle from `reserve` owns the slot. This is intentional so a temporary returned by `promote(...)` cannot silence the promoted page.
 
+### Feed infrastructure primitives
+
+Four small, target-independent types cover the bookkeeping a video-first feed
+needs around the player. They are pure data: no HTTP client, no platform API,
+and no decoder is touched.
+
+| Type | Purpose |
+|---|---|
+| `LoadControl` | Buffer bounds and thresholds: `with_min_buffer`, `with_max_buffer`, `with_buffer_for_playback`, `with_rebuffer_threshold`; queries `should_start`, `should_continue_loading`, `should_rebuffer`, `is_stalled`. |
+| `MediaCache` | Byte-bounded LRU of source payloads: `put`, `get`, `remove`, `clear`, `bytes`, `len`. A hit converts to `VideoSource::bytes(...)`. Clones share one store. |
+| `AudioFocus`, `AudioFocusState` | Focus state machine: `should_pause`, `should_duck`, `volume_multiplier`, `apply`, `abandon`. The platform owns the real focus request; this decides what the player should do. |
+| `PlayerPool` / `PooledPlayer` | Decoder-slot budget plus one audible owner, shown earlier. |
+
+```rust,no_run
+use cranpose_video::{AudioFocus, AudioFocusState, LoadControl, MediaCache, VideoSource};
+use std::time::Duration;
+
+let control = LoadControl::new().with_min_buffer(Duration::from_millis(500));
+assert!(control.should_start(Duration::from_secs(1)));
+assert!(control.should_continue_loading(Duration::from_secs(1)));
+
+let cache = MediaCache::with_limit(1024);
+cache.put("clip-a", vec![1u8; 64]);
+if let Some(bytes) = cache.get("clip-a") {
+    let _source = VideoSource::bytes(bytes);
+}
+
+let mut focus = AudioFocusState::new(0.25);
+assert!(!focus.apply(AudioFocus::Transient)); // duck, do not pause
+assert_eq!(focus.volume_multiplier(), 0.25);
+assert!(focus.abandon());
+```
+
+These are deliberately not a substitute for platform caching or audio sessions:
+`MediaCache` holds bytes in memory only, and `AudioFocus` does not register a
+system focus request.
+
 ---
 
 ## Scenarios
