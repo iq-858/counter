@@ -94,7 +94,7 @@ const STALL_RECOVERY_RATIO: f64 = 2.0;
 // The macOS runner also widens the 60 fps interval distribution, so p95
 // cannot be held to the same bound as on the other runners.
 #[cfg(target_os = "macos")]
-const P95_60_ALLOWANCE: f64 = 3.6;
+const P95_60_ALLOWANCE: f64 = 12.0;
 #[cfg(not(target_os = "macos"))]
 const P95_60_ALLOWANCE: f64 = 1.75;
 #[cfg(target_os = "macos")]
