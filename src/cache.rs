@@ -177,10 +177,12 @@ mod tests {
     fn a_get_refreshes_lru_position() {
         let cache = MediaCache::with_limit(100);
         cache.put("a", vec![1u8; 60]);
-        let _ = cache.get("a");
-        cache.put("b", vec![2u8; 60]);
+        cache.put("b", vec![2u8; 40]);
+        // Touch "a" after "b" was inserted: it is now the newest entry.
         assert!(cache.get("a").is_some());
-        assert!(cache.get("b").is_none());
+        cache.put("c", vec![3u8; 40]);
+        assert!(cache.get("a").is_some(), "the refreshed entry survives");
+        assert!(cache.get("b").is_none(), "the untouched entry is evicted");
     }
 
     #[test]

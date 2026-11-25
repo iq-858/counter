@@ -36,11 +36,24 @@ pub struct DashManifest {
 }
 
 fn attr(tag: &str, name: &str) -> Option<String> {
+    // A plain `find("width=\"")` also matches inside `bandwidth="..."`, so
+    // require a real attribute boundary before the name.
     let needle = format!("{name}=\"");
-    let start = tag.find(&needle)? + needle.len();
-    let rest = &tag[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_owned())
+    let mut from = 0usize;
+    while let Some(offset) = tag[from..].find(&needle) {
+        let start = from + offset;
+        let boundary = start == 0
+            || tag.as_bytes()[start - 1].is_ascii_whitespace()
+            || tag.as_bytes()[start - 1] == b'<';
+        if boundary {
+            let value_start = start + needle.len();
+            let rest = &tag[value_start..];
+            let end = rest.find('"')?;
+            return Some(rest[..end].to_owned());
+        }
+        from = start + needle.len();
+    }
+    None
 }
 
 fn number(tag: &str, name: &str) -> Option<u64> {

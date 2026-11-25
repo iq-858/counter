@@ -158,7 +158,12 @@ mod tests {
     fn a_bandwidth_drop_downgrades_immediately() {
         let mut controller = AbrController::new(AbrConfig::default());
         let reps = reps();
+        // An upgrade is conservative: three good samples are required.
+        for _ in 0..3 {
+            assert_eq!(controller.sample(2_000_000, 5_000, &reps), 0);
+        }
         assert_eq!(controller.sample(2_000_000, 5_000, &reps), 1);
+        // A bandwidth drop still reacts at once.
         assert_eq!(controller.sample(300_000, 5_000, &reps), 0);
     }
 

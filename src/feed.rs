@@ -189,14 +189,22 @@ impl VideoFeedController {
             return false;
         }
         for other in 0..self.items.len() {
-            if other != index {
+            if other == index {
+                continue;
+            }
+            // Only work that is actually in flight is cancelled. An untouched
+            // item must stay Idle so it can be prepared later, and an already
+            // prepared slot stays warm for a fast swipe back.
+            if matches!(
+                self.stages[other],
+                FeedStage::Requested | FeedStage::Downloading | FeedStage::Preparing
+            ) {
                 self.cancel_preload(other);
-                if matches!(
-                    self.stages[other],
-                    FeedStage::Playing | FeedStage::Transitioning
-                ) {
-                    self.stages[other] = FeedStage::Paused;
-                }
+            } else if matches!(
+                self.stages[other],
+                FeedStage::Playing | FeedStage::Transitioning
+            ) {
+                self.stages[other] = FeedStage::Paused;
             }
         }
         self.current = index;
