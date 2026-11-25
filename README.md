@@ -390,6 +390,26 @@ Rule: **use one handle for both picture and controls**. Calling `Video(source, .
 
 HLS caveat: `rememberVideoPlayer` always calls `open`, never `open_hls`. A server URL like `/stream?id=123` is therefore treated as a plain file and will fail. Either make the URL path end in `.m3u8` before the query, or use the engine layer and call `VideoPlayer::open_hls` yourself.
 
+### Capability reporting
+
+`VideoCapabilities::detect()` reports what the **selected backend** can be
+asked to decode. It is a build/platform-level answer, not a device probe: a
+particular machine may still lack a hardware codec or a GStreamer plugin.
+
+```rust,no_run
+use cranpose_video::{VideoCapabilities, VideoCodec};
+
+let caps = VideoCapabilities::detect();
+println!("{:?}: {:?}", caps.platform(), caps.supported_codecs());
+if caps.supports_codec(VideoCodec::H264) {
+    // The backend can be asked; an open may still fail on a specific device.
+}
+```
+
+`DecoderKind` distinguishes the platform stack, a platform software path, an
+application-supplied decoder (`VideoPlayer::with_decoder`), and no decoder.
+No in-crate GPU capability is claimed here — see the rendering limitations above.
+
 ### Other exported clusters
 
 The crate root also exports these groups; each has rustdoc at its source file:
