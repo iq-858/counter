@@ -80,6 +80,23 @@ Note: `cranpose-video` is not published on crates.io (`publish = false`); `cranp
 
 **Adoption policy:** do not add FFmpeg or GStreamer as mandatory dependencies. Keep native backends first, pure-Rust demux as an optional feature, and GPU crates as optional, explicitly unverified integrations.
 
+## 2c. Verified instant-start techniques (spec-based)
+
+Sources fetched: RFC 8216 (HLS), the HLS 2nd-edition draft, Apple HLS Authoring Specification, RFC 9110/9114 (HTTP Range, HTTP/3), W3C Media Source Extensions, MDN `readyState`/`buffered`/`requestVideoFrameCallback`/`AbortController`, MPEG-A/CMAF.
+
+Concrete facts usable by this crate:
+
+- **HLS segments start at IDR frames** (Apple rule 1.13, recommended every 2 s) and target 6 s. A player can begin at the first IDR without waiting for a full file.
+- **fMP4 needs `EXT-X-MAP`** initialization before fragments (RFC 8216 §3.3). A cache key must include the init URI/range, not only the segment URI.
+- **Master playlist** (`EXT-X-STREAM-INF`) carries `BANDWIDTH`, `AVERAGE-BANDWIDTH`, `CODECS`, `RESOLUTION`, `FRAME-RATE` — enough to select a variant before downloading media.
+- **HLS 2nd edition** adds `EXT-X-PART`, `EXT-X-PRELOAD-HINT` and blocking/delta playlist reload to shorten live-edge startup. These are parser work, not decoder work.
+- **HTTP Range + 206** (RFC 9110 §14) allows partial byte fetches and `EXT-X-BYTERANGE`; connection reuse is explicitly encouraged by RFC 9110/9114.
+- **Cancellation**: one abort token per in-flight request; bump the generation on ABR switch or swipe so late responses cannot land in the wrong player slot. This crate already has generation tokens in `PreloadManager` / `VideoFeedController` — the network layer must carry them.
+- **Client state**: target `HAVE_FUTURE_DATA` (two frames ahead) before starting playback; show a poster until the first decoded frame is ready (`VideoFrameWithPoster` already does this).
+- **Frame pacing**: use a frame-ready signal (`requestVideoFrameCallback` on web, decoder wake-up on native) instead of a fixed sleep — phase 2 of this roadmap.
+
+Platform-internal details of YouTube/TikTok/Instagram are **not** public in these sources; the above is the verifiable common architecture, not a claim about their proprietary algorithms.
+
 ## 3. Phased plan
 
 ### Phase 1 — Finish feed integration (current priority)
