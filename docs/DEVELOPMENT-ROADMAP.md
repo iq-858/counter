@@ -70,7 +70,7 @@ Verified via crates.io API; coverage inferred from the underlying engine is mark
 |---|---|---|
 | `gstreamer` 0.25.4 | GStreamer pipeline bindings (MIT/Apache-2.0) | Already used on Linux behind `linux-gstreamer`; pipelines can cover MP4/MKV/TS/HLS/DASH via plugins, but each plugin is a system dependency. |
 | `ffmpeg-next` 9.1 / `video-rs` 0.13 | FFmpeg bindings | Widest format coverage (inferred via avformat/avcodec) but heavy native dependency; unsuitable as a mandatory dependency. |
-| `symphonia` 0.6.1 | Pure-Rust demux + audio decode (MP4 opt/MKV/OGG/WAV/AIFF/CAF), MPL-2.0 | Already used indirectly via `cranpose-media`. Video codecs are experimental; useful for demux-to-access-units work, not for decoding H.264. |
+| `symphonia` 0.6.1 | Pure-Rust demux audio decode (MP4 opt/MKV/OGG/WAV/AIFF/CAF), MPL-2.0 | Already used indirectly via `cranpose-media`. Video codecs are experimental; useful for demux-to-access-units work, not for decoding H.264. |
 | `rodio` 0.23 | Audio output via cpal | Our audio path is already equivalent. |
 | `gpu-video` 0.5 / `pixelforge` 0.14 / `oxideav-vulkan-video` 0.0.2 | Vulkan Video encode/decode, some with wgpu integration | Candidate future optional GPU path; licenses not verified from metadata. Requires real device verification before any zero-copy claim. |
 | `mpv-wgpu` / `hap-wgpu` / `vtsampler` | GPU texture presentation/format conversion examples | Useful references for a `VideoRenderer` abstraction; not drop-in dependencies. |
@@ -97,6 +97,28 @@ Concrete facts usable by this crate:
 
 Platform-internal details of YouTube/TikTok/Instagram are **not** public in these sources; the above is the verifiable common architecture, not a claim about their proprietary algorithms.
 
+## 2d. Code-level review findings (2026-11-26)
+
+Full report: `docs/library-review.md`. Verified gaps that shape the phases:
+
+- **No HTTP byte-range fetch layer** — `preload_coordinator.rs` decides levels
+  but never downloads; `disk_cache.rs` has no expiration/integrity/metrics.
+- **DASH is parser-only** — `parse_mpd` is exported but nothing consumes
+  `DashManifest`; `platform/mod.rs::open` routes HLS only.
+- **ABR is not wired** into the HLS segment scheduler.
+- **Subtitles are parsed but not wired** — `subtitle.rs` exports
+  `parse_subtitles`/`active_at`, yet `widget.rs` never renders cues and the
+  player exposes only backend track selection.
+- **No LL-HLS** (`EXT-X-PART`, `EXT-X-PRELOAD-HINT`, delta reload), no RTSP,
+  no DRM (0 matches for Widevine/FairPlay/CENC).
+- **No container→access-unit demuxer** for the `upstream-video` path;
+  `upstream.rs::open_stream` hardcodes 40 ms timestamps and needs caller-side
+  Annex-B demuxing.
+- **No benches/**; probes live in `examples/` only.
+- Build baseline: `cargo check --all-targets` green on
+  nightly-2026-10-03 (rustc 1.101.0-nightly; stable 1.99.1 is below
+  cranpose 0.28's 1.100 requirement), 5 dead-code warnings only.
+
 ## 3. Phased plan
 
 ### Phase 1 — Finish feed integration (current priority)
@@ -110,7 +132,7 @@ Goal: a pager can actually promote a prepared player and mute the old one.
   4. Reserve the next slot through `PreloadManager`/`PreloadCoordinator`.
 - Add generation IDs to every callback that can complete late.
 - Tests: promotion, cancellation, resource limit exhaustion, first-frame readiness.
-- Files: `src/feed.rs`, `src/pool.rs`, `tests/feed.rs` (new).
+- Files: `sr/eed.rs`, `src/pool.rs`, `tests/feed.rs` (new).
 
 ### Phase 2 — Event-driven frame delivery
 
@@ -146,6 +168,46 @@ Goal: stop polling every window frame when nothing changed.
 
 - `benches/` with cold/warm/preloaded playback, 100-swipe feed transition, repeated source switching, memory pressure.
 - Store real device evidence (hardware, OS, resolution, codec, backend) — never fabricate numbers.
+
+### Phase 7 — Global-platform technologies (from review + platform research)
+
+Goal: the feature set a YouTube/TikTok/Instagram-class client needs.
+
+- **7a. HTTP byte-range fetch layer** (`src/range.rs`): Range/206 requests,
+  connection reuse, per-request abort tokens carrying generation IDs. Feeds
+  preload, DASH and the segment cache.
+- **7b. DASH segment engine**: SegmentTemplate/SegmentBase scheduling on top
+  of `DashManifest`, mirroring the HLS window design; wire `AbrController`
+  into both engines (downgrade fast, upgrade slowly).
+- **7c. Subtitle pipeline**: sidecar loader (path/URL), timed-text events on
+  `EventBus`, widget rendering of `active_at` cues, HLS subtitle renditions.
+- **7d. Disk cache hardening**: expiration, integrity hash, hit/miss metrics,
+  segment-level keys including the `EXT-X-MAP` init URI.
+- **7e. LL-HLS**: `EXT-X-PART`, `EXT-X-PRELOAD-HINT`, blocking/delta playlist
+  reload (parser work, not decoder work).
+- **7f. Container → access-unit demuxer** so `HardwareVideo::open_stream` can
+  be fed from MP4/HLS without caller-side demuxing; derive timestamps from
+  the container instead of the hardcoded 40 ms step.
+- **7g. DRM**: ClearKey/CENC first where the platform exposes it; Widevine
+  (Android/Windows) and FairPlay (Apple) need platform session plumbing.
+- **7h. RTSP** behind an optional feature (GStreamer path first).
+
+### Phase 8 — Native presentation surfaces
+
+- Feature-gated surface paths: D3D11/DXGI (Windows), AVPlayerLayer /
+  CVPixelBuffer (Apple), MediaCodec Surface + AHardwareBuffer (Android),
+  DMABUF (Linux), direct `<video>` presentation (web).
+- Each path states measured copies or is documented compile-only. The CPU
+  RGBA path stays the default; CPU NV12 is never called "zero-copy".
+
+### Phase 9 — Measurement and production hardening
+
+- `benches/` (criterion): cold/warm/preloaded start, 100-swipe feed
+  transition, repeated source switching, memory pressure.
+- Record device evidence (hardware, OS, resolution, codec, backend).
+- Runtime capability probe extending `capabilities.rs` beyond static tables.
+- Fuzz the playlist/MPD parsers with malformed inputs (extend
+  `tests/malformed_source.rs`).
 
 ---
 
