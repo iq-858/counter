@@ -17,6 +17,7 @@ mod decoder;
 mod diagnostics;
 mod error;
 mod frame;
+mod feed;
 #[cfg(any(
     target_os = "windows",
     target_os = "android",
@@ -65,6 +66,9 @@ pub use decoder::{DecodedFrame, VideoDecoder};
 pub(crate) use diagnostics::diag;
 pub use diagnostics::set_diagnostic_sink;
 pub use error::VideoError;
+pub use feed::{
+    FeedItem, FeedStage, PreloadStrategy, VideoFeedConfig, VideoFeedController,
+};
 pub use frame::{ColorMatrix, ColorRange, PixelFormat, VideoFrame, YuvColor};
 pub use info::{FrameRate, Rotation, VideoInfo};
 pub use load_control::LoadControl;

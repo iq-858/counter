@@ -440,6 +440,44 @@ These are deliberately not a substitute for platform caching or audio sessions:
 `MediaCache` holds bytes in memory only, and `AudioFocus` does not register a
 system focus request.
 
+### Video feed orchestration
+
+`VideoFeedController` owns the state machine of a vertical feed: selection,
+preparation stages, generation tokens that reject stale completions, and a
+bounded `PlayerPool` with one audible owner. It does **not** open decoders or
+download bytes — the application performs that work and reports it through
+`begin_preload` / `set_preload_stage` / `finish_preload`. That separation keeps
+the orchestration testable on every target and leaves native I/O to the
+platform backends.
+
+```rust,no_run
+use cranpose_video::{
+    FeedItem, FeedStage, PreloadStrategy, VideoFeedConfig, VideoFeedController,
+};
+
+let config = VideoFeedConfig {
+    preload_next: 2,
+    preload_strategy: PreloadStrategy::Adaptive,
+    ..Default::default()
+};
+let mut feed = VideoFeedController::new(config);
+feed.set_items(vec![FeedItem::new("a", "a.mp4"), FeedItem::new("b", "b.mp4")]);
+
+assert!(feed.set_current_index(0));
+let generation = feed.begin_preload(1).expect("the next item can be prepared");
+assert!(feed.finish_preload(1, generation));
+assert_eq!(feed.stage(1), Some(FeedStage::Prepared));
+
+assert!(feed.set_current_index(1));
+assert_eq!(feed.stage(1), Some(FeedStage::Playing));
+assert_eq!(feed.pool().audible(), feed.active_slot());
+```
+
+Switching selection cancels other in-flight operations and bumps their
+generation, so a late completion from the old item cannot replace the new one.
+Only the selected slot is audible; prepared slots are bounded by
+`max_concurrent_decoders`.
+
 ---
 
 ## Scenarios
