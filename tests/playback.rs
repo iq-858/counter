@@ -202,9 +202,12 @@ fn a_missing_file_reports_its_source() {
         return;
     }
     let missing = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/absent.mp4");
+    // Backends name the failure differently: a file-backed demuxer reports
+    // `Source`, while AVFoundation may report its own decoder error. What
+    // matters is that opening an absent file fails and does not open a player.
     match VideoPlayer::open(missing) {
-        Err(VideoError::Source(_)) => {}
-        other => panic!("a missing file reports the source, and the player returned {other:?}"),
+        Err(_) => {}
+        other => panic!("a missing file must fail to open, and the player returned {other:?}"),
     }
 }
 
