@@ -6,8 +6,6 @@
 //! ahead, and rejects completions from an old generation after an ABR switch
 //! or a feed swipe.
 
-use std::collections::HashSet;
-
 /// Stable identity of one fetchable segment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SegmentKey {
@@ -196,6 +194,7 @@ impl SegmentScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn segments() -> Vec<SegmentKey> {
         (0..4)
@@ -221,11 +220,11 @@ mod tests {
     fn the_window_bounds_outstanding_requests() {
         let mut scheduler = SegmentScheduler::new(2);
         scheduler.set_segments(segments());
-        let (a, gen) = scheduler.request_next().unwrap();
+        let (a, generation) = scheduler.request_next().unwrap();
         let (b, _) = scheduler.request_next().unwrap();
         assert_ne!(a, b);
         assert!(scheduler.request_next().is_none());
-        assert!(scheduler.complete(a, gen));
+        assert!(scheduler.complete(a, generation));
         assert!(scheduler.request_next().is_some());
     }
 
@@ -245,9 +244,9 @@ mod tests {
     fn ready_keys_only_include_completed_segments() {
         let mut scheduler = SegmentScheduler::new(2);
         scheduler.set_segments(segments());
-        let (index, gen) = scheduler.request_next().unwrap();
+        let (index, generation) = scheduler.request_next().unwrap();
         assert!(scheduler.ready_keys().is_empty());
-        scheduler.complete(index, gen);
+        scheduler.complete(index, generation);
         assert_eq!(scheduler.ready_keys(), vec![format!("media:seg{index}.m4s")]);
     }
 
@@ -255,8 +254,8 @@ mod tests {
     fn a_failure_can_be_retried_in_the_same_generation() {
         let mut scheduler = SegmentScheduler::new(1);
         scheduler.set_segments(segments());
-        let (index, gen) = scheduler.request_next().unwrap();
-        assert!(scheduler.fail(index, gen));
+        let (index, generation) = scheduler.request_next().unwrap();
+        assert!(scheduler.fail(index, generation));
         assert!(scheduler.retry(index));
         assert_eq!(scheduler.state(index), Some(SegmentState::Idle));
     }
