@@ -7,8 +7,7 @@
 use std::time::Duration;
 
 use crate::{
-    AbrConfig, AbrController, AbrMode, BufferSnapshot, DashRepresentation, LoadControl,
-    Representation,
+    AbrConfig, AbrController, AbrMode, DashRepresentation, LoadControl, Representation,
 };
 
 /// A representation the streaming layer can actually select.
