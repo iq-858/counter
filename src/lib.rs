@@ -46,6 +46,7 @@ mod pool;
 mod player;
 mod repeat_mode;
 mod resource;
+mod segment;
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 mod session;
 mod source;
@@ -107,6 +108,7 @@ pub use player::VideoPlayer;
 pub use pool::{PlayerPool, PooledPlayer};
 pub use repeat_mode::RepeatMode;
 pub use resource::{PrefetchGuard, Priority, ResourceLimits, VideoResourceManager};
+pub use segment::{SegmentKey, SegmentScheduler, SegmentState};
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 pub use session::{
     InterruptionReason, PlaybackSession, PlaybackState, RECOVERY_COOLDOWN, RECOVERY_COOLDOWN_MAX,

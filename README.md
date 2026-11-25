@@ -500,6 +500,14 @@ cache.put("segment-1", &bytes)?;
 These are building blocks, not a complete DASH player: scheduling, segment
 fetching and synchronization remain application or platform-backend work.
 
+### Segment scheduling
+
+`SegmentScheduler` tracks HLS/fMP4 segment fetches without an HTTP client:
+`SegmentKey` distinguishes initialization (`EXT-X-MAP`), media and byte-range
+requests with distinct cache keys. `request_next()` respects a bounded
+in-flight window, `complete/fail` require the current generation, and
+`invalidate()` cancels stale requests on an ABR switch or feed swipe.
+
 ### Predictive preload levels
 
 `PreloadCoordinator` schedules sources by distance from the selected item and
