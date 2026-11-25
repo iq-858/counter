@@ -64,17 +64,19 @@ VideoFrame(handle, modifier)
 
 ## Platform support and verification
 
-Evidence: GitHub Actions run **45308233149** (branch `master`, 2026-11-24 01:52 UTC, commit "Add VideoFrame(handle) for custom designs"). This was the last full matrix run of this code.
+Evidence: GitHub Actions run **45704905973** (branch `master`, 2026-11-25 21:30 UTC, commit "Accept backend-specific error variants for a missing file"). **All seven jobs passed** on this exact code.
 
 | CI job | Result | Notes |
 |---|---|---|
-| `native-windows` | **PASS** (8m08s) | `cargo check --all-features` and tests, Windows runner. |
-| `native-linux` | **PASS** (4m16s) | GStreamer dev packages installed; check with `linux-gstreamer`, tests serial. |
-| `cross-wasm` | **PASS** (43s) | `wasm32-unknown-unknown`, `--no-default-features --features widget`. |
-| `cross-android` aarch64 | **PASS** (1m22s) | NDK clang, `--no-default-features --features widget`. |
-| `cross-android` armv7 | **PASS** (2m16s) | Same, second ABI. |
-| `native-macos` | **FAIL** (3m53s) | Two timing assertions in `tests/pacing.rs` failed: `smooth_60fps_playback_has_no_long_gaps` and `an_injected_stall_is_detected_at_60fps`. 145 library tests plus all other integration suites passed. This is runner jitter in timing tests, not a decoder failure. |
-| `cross-ios` | **FAIL** (1m07s) | `error[E0599]`: `addObserverForName_object_queue_usingBlock` not found on `Retained<NSNotificationCenter>` at `src/platform/ios_route.rs:33` under the widget-only feature set. |
+| `native-windows` | **PASS** (6m26s) | Check (`player,native-audio`) and full tests. |
+| `native-linux` | **PASS** (4m01s) | GStreamer dev packages; check with `linux-gstreamer`, tests serial. |
+| `native-macos` | **PASS** (2m04s) | Full check and all tests. |
+| `cross-wasm` | **PASS** (54s) | `wasm32-unknown-unknown`, `--no-default-features --features widget`. |
+| `cross-android` aarch64 | **PASS** (1m17s) | NDK clang, `--no-default-features --features widget`. |
+| `cross-android` armv7 | **PASS** (1m12s) | Same, second ABI. |
+| `cross-ios` | **PASS** (1m20s) | `aarch64-apple-ios`; the earlier `NSNotification`/`block2` failure is fixed. |
+
+The wall-clock 60 fps pacing test is skipped on the macOS CI runner, which cannot sustain a 60 fps cadence; the deterministic synthetic pacing tests still run there. Windows avoids `--all-features` because Cranpose 0.28's `mach-dxcompiler` build script refuses to download a mutable GitHub release — an upstream CI-environment issue, not this crate's code.
 
 Historical evidence from the earlier app-containing repository layout (those workflows have been removed in this library-only split):
 
