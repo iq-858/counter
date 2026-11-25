@@ -42,11 +42,11 @@ linux-gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", 
 native-audio = ["dep:cranpose-media", "dep:cranpose-services", "dep:cpal"]
 
 [dependencies]
-cranpose = { version = "0.24.0", optional = true, default-features = false, features = [
+cranpose = { version = "0.28.0", optional = true, default-features = false, features = [
     "embedded-default-font",
 ] }
-cranpose-core = { version = "0.24.0", optional = true }
-cranpose-ui = { version = "0.24.0", optional = true }
+cranpose-core = { version = "0.28.0", optional = true }
+cranpose-ui = { version = "0.28.0", optional = true }
 parking_lot = "0.12.5"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2.0.21"
@@ -57,8 +57,8 @@ web-time = "1.1"
 # backend opens an output device only when a source is attached, so a build with
 # the feature still starts silently and never fails video because sound did.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-cranpose-media = { version = "0.24.0", optional = true }
-cranpose-services = { version = "0.24.0", optional = true, default-features = false, features = ["http-native"] }
+cranpose-media = { version = "0.28.0", optional = true }
+cranpose-services = { version = "0.28.0", optional = true, default-features = false, features = ["http-native"] }
 
 # Media Foundation is part of Windows and decodes H.264, HEVC, VP9, AV1 and
 # MPEG-2 through the same source reader the system players use.

@@ -18,7 +18,7 @@ Both layers use the same decoder per platform. The UI layer does not add a secon
 | Item | Value |
 |---|---|
 | Rust edition | 2024 (requires rustc **1.85+**) |
-| Cranpose crates | `0.24.0` (caret: `>=0.24.0, <0.25.0`) |
+| Cranpose crates | `0.28.0` (caret: `>=0.28.0, <0.29.0`) — migration branch |
 | Default features | `widget`, `player` |
 | Optional system deps | GStreamer 1.0 dev packages for Linux; an Android NDK for Android cross-checks |
 
@@ -688,7 +688,7 @@ fn enable_diagnostics() {
 
 ## Future compatibility with Cranpose
 
-Dependencies are declared as `0.24.0`, which Cargo reads as `>=0.24.0, <0.25.0`. That admits patch and maintenance releases in the 0.24 line, but **not** 0.25+: in the 0.x range Cargo treats a minor bump as potentially breaking, and Cranpose's composable/runtime APIs are exactly the kind that can change there. Widening the range to `>=0.24, <1` would let a new minor version compile against code written for the old one and fail at build time in your application; that is why the crate does not do it.
+Dependencies are declared as `0.28.0`, which Cargo reads as `>=0.28.0, <0.29.0`. That admits patch releases in the 0.28 line but **not** 0.29+: in the 0.x range Cargo treats a minor bump as potentially breaking, and Cranpose's composable/runtime APIs are exactly the kind that can change there. This branch tracks the latest upstream line; `master` remains the verified 0.24 line until this migration passes the full CI matrix.
 
 Practical options when a newer Cranpose arrives:
 
