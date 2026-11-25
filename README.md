@@ -785,6 +785,91 @@ A widget-only iOS build previously failed because `objc2-foundation` enabled `NS
 - GPU zero-copy and HDR device rendering are **not implemented or verified** here. Playback is device-tested on Windows and iOS; no quantitative performance numbers are claimed.
 - No arbitrary HTTP headers can be attached to a `VideoSource`; use signed URLs.
 
+## Full API reference
+
+Every item below is exported by the crate root (`pub use` in `src/lib.rs`) and is
+compiled into this crate's doctests because the README is included as crate
+docs. Groups map to files: `player.rs` (engine), `widget.rs` (UI),
+`pool.rs` (feed pools), `preload.rs` / `preload_coordinator.rs` (incomplete
+sources and predictive preloading), `feed.rs` (feed states), `cache.rs` /
+`disk_cache.rs` (storage), `dash.rs` / `abr.rs` / `stream_policy.rs` /
+`playback_params.rs` / `repeat_mode.rs` / `loop_range.rs` (streaming),
+`upstream.rs` (Cranpose 0.28 bridge), `events.rs` / `telemetry.rs` (monitoring),
+`resource.rs` / `buffer.rs` / `media.rs` / `tracks.rs` / `frame.rs` /
+`color.rs` / `subtitle.rs` / `capabilities.rs` / `platform/*` (mixed engine).
+
+### Engine — `VideoPlayer`
+
+| Method | Meaning |
+|---|---|
+| `open(source)` / `open_hls(source)` | Open, routing by `is_hls()` / forcing HLS. |
+| `with_decoder(decoder)` | Supplies a custom `VideoDecoder` on unsupported targets. |
+| `info()` → `VideoInfo { width, height, duration, frame_rate, rotation }` | What the container states; `display_size()` applies rotation. |
+| `state()` → `VideoState` (`Idle/Loading/Playing/Paused/Ended/Failed`) | Current state. |
+| `is_playing()`, `is_live()`, `is_seekable()`, `is_closed()` | Booleans for the common states. |
+| `position()`, `duration()`, `speed()`, `volume()`, `is_muted()` | Live values; `duration()` is `None` for live streams. |
+| `play()`, `pause()`, `toggle()`, `stop()`, `seek(Duration)`, `seek_fraction(f32)`, `set_speed(f32)`, `set_looping(bool)`, `set_muted(bool)`, `set_volume(f32)` | Transport; setters return `Result<(), VideoError>`. |
+| `take_frame()` → `Option<VideoFrame>` | Takes the newest decoded frame. |
+| `recycle(frame)` | Returns the frame buffer to the decoder pool. |
+| `set_native_nv12(bool)` / `native_nv12()` | Uses/wants native NV12 frames when the backend supports them. |
+| `media()`, `media_info()`, `audio_tracks()`, `subtitle_tracks()`, `set_audio_track(idx)`, `set_subtitle_track(idx)` | Media facts and track selection. |
+| `buffering()` → `Buffering` (`state/fraction/percent/since/held_for/is_stalled/is_idle`) | Buffering window, stalls, retry hints. |
+| `set_audio_group(u64)` | Adds the player to an audio group. |
+| `events()` → `Vec<EventRecord>`, `publication_timeline()`, `diagnostics()`, `recovery_events()` | Event history and recovery info. |
+| `note_route_changed()` | Notifies the player that the device audio route changed. |
+| `attach_hardware_frames(frames)` / `hardware_frames()` | Attaches upstream-0.28 `DecodedFrames` for the GPU path (when built with `upstream-video`). |
+| `close()` | Explicit close (`&mut self`). |
+
+### Widget — `VideoPlayerHandle`, composables
+
+| Function | Meaning |
+|---|---|
+| `rememberVideoPlayer(source)` | Opens one player keyed by source, returns a `VideoPlayerHandle`. |
+| `VideoFrame(handle, modifier)` | Draws the picture; also routes to `PlayerSurface` if `attach_hardware_frames` was called. |
+| `VideoFrameWithPoster(handle, modifier, poster)` | Poster until first frame and after source change. |
+| `Video(source, modifier)` | Shortcut: `rememberVideoPlayer` + picture. |
+| `VideoWithControls(source, modifier)` | Picture + stock controls and progress slider. |
+| `VideoControls(handle, modifier)` | Stock controls for a handle. |
+| `VideoProgressSlider(handle, modifier)` / `VideoProgressSliderWith(handle, modifier, spec, content)` | Progress sliders; the latter takes a custom thumb/track. |
+| `progress_fraction_for(position, duration)` | Pure helper `0.0..=1.0`. |
+
+`VideoPlayerHandle` mirrors the `VideoPlayer` methods above, all with `&self`.
+
+### Feeds — `VideoFeedController`, `PlayerPool`
+
+`VideoFeedController` lifecycle: `Idle/Requested/Downloading/Preparing/Prepared/Ready/Playing/Paused/Transitioning/Completed/Failed/Cancelled`. Key methods: `set_items`, `set_current_index`, `begin_preload`, `set_preload_stage`, `finish_preload`, `cancel_preload`, `cancel_all`, `preload_next`, `preload_previous`, `current_item`, `stage`, `pool`.
+
+`PlayerPool` methods: `reserve`, `reserve_player`, `attach_player`, `with_player`, `promote`, `resume_player`, `suspend_player`, `release`, `release_player`, `audible`, `ranked`, `suspended`, `len`, `total_frame_bytes`, `is_decoding`, `is_audio_owner`, `set_frame_bytes`, `current_active_player`, `next_prepared_player`.
+
+### Predictive preloading — `PreloadCoordinator`
+
+Six levels (`PreloadLevel`): `Metadata, Bytes, Source, Decoder, FirstFrame, Prepared`. Methods: `new`, `config`, `manager`, `task`, `schedule`, `advance`, `cancel`, `cancel_obsolete`, `next_prepared`. Uses the generation-safe `PreloadManager`.
+
+### Incomplete sources — `PreloadManager`, `PreloadStage`
+
+Stages: `Idle/Requested/Downloading/Preparing/Prepared/Failed/Cancelled`. Methods: `begin`, `offer_chunk`, `finish`, `mark_prepared`, `cancel`, `stage`, `buffered`, `clear`. No I/O — the application feeds chunks.
+
+### Caching
+
+`MediaCache` (in-memory LRU): `with_limit`, `limit`, `bytes`, `len`, `is_empty`, `get`, `put`, `remove`, `clear`.
+`DiskCache` (persistent): `open(root, max_bytes)`, `get`, `put`, `remove`, `bytes`, `root`, `limit`.
+
+### Streaming / ABR
+
+`parse_mpd(input)` → `DashManifest { dynamic, duration_ms, segment_template, initialization, representations }`.
+`AbrController`: `new`, `mode`, `current`, `set_mode`, `sample(throughput_bps, buffer_millis, reps)`.
+`StreamPolicy`: `load_control`, `abr`, `set_mode`, `set_manual_index`, `select(throughput_bps, buffer, reps)`, `dash_representations(reps)`.
+`BufferSnapshot { buffered, waiting }` used by the policy.
+
+### Events
+
+`EventBus::new(capacity)`; `publish(kind, position)`, `events()`, `since(seq)`, `last()`, `clear()`, `set_coalesce_positions(bool)`, `coalesces_positions()`. Event kinds: `FrameAvailable`, `PlaybackStarted/Paused`, `BufferingStarted/Ended`, `PositionChanged`, `DurationChanged`, `FirstFrameReady`, `VideoSizeChanged`, `SeekStarted/Completed`, `Ended`, `DecoderChanged`, `Error`, `ResourcePressure`.
+
+### Misc
+
+`HardwareVideo` (upstream): `open_stream(codec, w, h, annex_b)`, `submit`, `frames`, `wait_for_frame`, `stats`, `capabilities`.
+`VideoHardwareSurface` — re-exported `cranpose::PlayerSurface` (Android Metal/Vulkan, Apple Metal).
+
 ## License
 
 Apache-2.0 OR MIT. See `LICENSE` and `LICENSE-MIT`.
