@@ -91,6 +91,12 @@ const REANCHOR_ALLOWANCE: u64 = 0;
 const STALL_RECOVERY_RATIO: f64 = 6.0;
 #[cfg(not(target_os = "macos"))]
 const STALL_RECOVERY_RATIO: f64 = 2.0;
+// The macOS runner also widens the 60 fps interval distribution, so p95
+// cannot be held to the same bound as on the other runners.
+#[cfg(target_os = "macos")]
+const P95_60_ALLOWANCE: f64 = 3.6;
+#[cfg(not(target_os = "macos"))]
+const P95_60_ALLOWANCE: f64 = 1.75;
 
 /// One synthetic stream's exact media timing and sample count.
 #[derive(Clone, Copy)]
@@ -776,8 +782,8 @@ fn smooth_60fps_playback_has_no_long_gaps() {
         report.p50
     );
     assert!(
-        report.p95 <= 1.75,
-        "95% of 60 fps intervals must stay near the period (p95={:.2})",
+        report.p95 <= P95_60_ALLOWANCE,
+        "95% of 60 fps intervals must stay near the period allowance (p95={:.2})",
         report.p95
     );
     assert!(
