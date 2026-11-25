@@ -62,6 +62,24 @@ A library without a CDN can implement the decision layers (2, 3, 4, 5, 6) and a 
 
 ---
 
+## 2b. Rust media-library landscape (research, 2026-11-26)
+
+Verified via crates.io API; coverage inferred from the underlying engine is marked as such.
+
+| Crate | Role | Notes relevant to this crate |
+|---|---|---|
+| `gstreamer` 0.25.4 | GStreamer pipeline bindings (MIT/Apache-2.0) | Already used on Linux behind `linux-gstreamer`; pipelines can cover MP4/MKV/TS/HLS/DASH via plugins, but each plugin is a system dependency. |
+| `ffmpeg-next` 9.1 / `video-rs` 0.13 | FFmpeg bindings | Widest format coverage (inferred via avformat/avcodec) but heavy native dependency; unsuitable as a mandatory dependency. |
+| `symphonia` 0.6.1 | Pure-Rust demux + audio decode (MP4 opt/MKV/OGG/WAV/AIFF/CAF), MPL-2.0 | Already used indirectly via `cranpose-media`. Video codecs are experimental; useful for demux-to-access-units work, not for decoding H.264. |
+| `rodio` 0.23 | Audio output via cpal | Our audio path is already equivalent. |
+| `gpu-video` 0.5 / `pixelforge` 0.14 / `oxideav-vulkan-video` 0.0.2 | Vulkan Video encode/decode, some with wgpu integration | Candidate future optional GPU path; licenses not verified from metadata. Requires real device verification before any zero-copy claim. |
+| `mpv-wgpu` / `hap-wgpu` / `vtsampler` | GPU texture presentation/format conversion examples | Useful references for a `VideoRenderer` abstraction; not drop-in dependencies. |
+| `cranpose-media` 0.28 | Upstream in-process backend built on symphonia | Confirms the project direction: small dependency footprint, feature gating (`all-codecs`), and composable integration. |
+
+Note: `cranpose-video` is not published on crates.io (`publish = false`); `cranpose-media` is the closest published analogue. Do not describe this crate as a crates.io package.
+
+**Adoption policy:** do not add FFmpeg or GStreamer as mandatory dependencies. Keep native backends first, pure-Rust demux as an optional feature, and GPU crates as optional, explicitly unverified integrations.
+
 ## 3. Phased plan
 
 ### Phase 1 — Finish feed integration (current priority)
