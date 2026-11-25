@@ -20,6 +20,7 @@ mod decoder;
 mod diagnostics;
 mod disk_cache;
 mod error;
+mod events;
 mod frame;
 mod feed;
 #[cfg(any(
@@ -74,6 +75,7 @@ pub use disk_cache::DiskCache;
 pub(crate) use diagnostics::diag;
 pub use diagnostics::set_diagnostic_sink;
 pub use error::VideoError;
+pub use events::{EventBus, PlaybackEventKind, PlaybackEventRecord};
 pub use feed::{
     FeedItem, FeedStage, PreloadStrategy, VideoFeedConfig, VideoFeedController,
 };

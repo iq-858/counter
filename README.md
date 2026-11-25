@@ -390,6 +390,31 @@ Rule: **use one handle for both picture and controls**. Calling `Video(source, .
 
 HLS caveat: `rememberVideoPlayer` always calls `open`, never `open_hls`. A server URL like `/stream?id=123` is therefore treated as a plain file and will fail. Either make the URL path end in `.m3u8` before the query, or use the engine layer and call `VideoPlayer::open_hls` yourself.
 
+### Event delivery
+
+`EventBus` is a bounded, clone-shared log of `PlaybackEventRecord`s. It publishes
+the full event set (`FrameAvailable`, `FirstFrameReady`, `PositionChanged`,
+`DurationChanged`, `VideoSizeChanged`, `SeekStarted/Completed`, buffering,
+decoder changes, errors and resource pressure). Consecutive position events are
+**coalesced by default**, so a 60 fps clock does not flood the UI; disable it
+with `set_coalesce_positions(false)` when a caller needs every tick.
+
+```rust,no_run
+use cranpose_video::{EventBus, PlaybackEventKind};
+use std::time::Duration;
+
+let bus = EventBus::new(64);
+let marker = bus.publish(PlaybackEventKind::PlaybackStarted, Duration::ZERO);
+bus.publish(PlaybackEventKind::PositionChanged, Duration::from_millis(16));
+for event in bus.since(marker) {
+    println!("{:?} @ {:?}", event.kind, event.position);
+}
+```
+
+This is an event log, not a wake-up primitive: the UI still drives drawing
+through Cranpose. It gives applications ordered observations without unbounded
+queues or 60 position events per second by default.
+
 ### DASH, ABR and disk cache
 
 Three more engine layers are available without new dependencies:
