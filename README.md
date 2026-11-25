@@ -43,7 +43,7 @@ cargo run -- clip.mp4                          # needs the `desktop` feature
 
 ## Architecture: how playback works
 
-```
+```text
 rememberVideoPlayer(source)
   └─ rememberKeyed(source, |s| Rc::new(VideoPlayer::open(s.clone())))
         └─ VideoPlayerHandle { opened: Rc<Result<VideoPlayer, VideoError>> }
@@ -104,7 +104,7 @@ What this means, honestly:
 
 ### Sources: `VideoSource`
 
-```rust
+```text
 pub enum VideoSource { Path(Arc<Path>), Url(Arc<str>), Bytes(Arc<[u8]>) }
 ```
 
@@ -266,7 +266,7 @@ use std::time::{Duration, Instant};
 
 fn overlay(player: &VideoPlayer) {
     let buffering = player.buffering();
-    if buffering.is_waiting() {
+    if buffering.state().is_waiting() {
         println!("buffering {}%", buffering.percent());
         if buffering.is_stalled(Instant::now(), Duration::from_secs(10)) {
             println!("stalled — offer a retry");
@@ -413,7 +413,7 @@ fn Screen() {
 use cranpose::{composable, prelude::*};
 use cranpose_video::{VideoFrame, rememberVideoPlayer};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Clip { title: String, source: String }
 
 #[composable]
