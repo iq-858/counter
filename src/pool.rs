@@ -25,7 +25,6 @@
 //! assert_eq!(pool.len(), 1);
 //! ```
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 

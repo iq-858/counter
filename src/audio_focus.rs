@@ -47,7 +47,7 @@ impl AudioFocus {
 }
 
 /// A small state holder for the focus an application has currently accepted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct AudioFocusState {
     current: AudioFocus,
     duck_factor: f32,
