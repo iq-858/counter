@@ -61,11 +61,25 @@ impl PoolShared {
 ///
 /// Dropping it releases the slot, its decode budget and its audio claim, so a
 /// caller cannot leak a slot by forgetting a `release` call.
-#[derive(Clone)]
 pub struct PooledPlayer {
     id: u64,
     priority: Priority,
     shared: Arc<PoolShared>,
+    /// Only the handle returned by `reserve` owns the slot. A clone or the
+    /// handle returned by `promote` is a view: dropping it must not release a
+    /// slot someone else still holds, or steal the audio owner.
+    owns: bool,
+}
+
+impl Clone for PooledPlayer {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            priority: self.priority,
+            shared: Arc::clone(&self.shared),
+            owns: false,
+        }
+    }
 }
 
 impl std::fmt::Debug for PooledPlayer {
@@ -111,6 +125,9 @@ impl PooledPlayer {
 
 impl Drop for PooledPlayer {
     fn drop(&mut self) {
+        if !self.owns {
+            return;
+        }
         let mut state = self.shared.lock();
         state.manager.unregister(self.id);
         if state.audible == Some(self.id) {
@@ -189,6 +206,7 @@ impl PlayerPool {
             id,
             priority,
             shared: Arc::clone(&self.shared),
+            owns: true,
         }
     }
 
@@ -211,6 +229,7 @@ impl PlayerPool {
             id,
             priority,
             shared: Arc::clone(&self.shared),
+            owns: false,
         })
     }
 
