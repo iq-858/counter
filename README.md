@@ -492,6 +492,15 @@ cache.put("segment-1", &bytes)?;
 These are building blocks, not a complete DASH player: scheduling, segment
 fetching and synchronization remain application or platform-backend work.
 
+### Predictive preload levels
+
+`PreloadCoordinator` schedules sources by distance from the selected item and
+tracks six levels: `Metadata`, `Bytes`, `Source`, `Decoder`, `FirstFrame` and
+`Prepared`. `PreloadConfig` sets how many items may reach each level and the
+parallel-download budget. It reuses `PreloadManager` generations, so
+`cancel` / `cancel_obsolete` reject late chunks and completions. It makes
+scheduling decisions only — HTTP and decoder work remain application-side.
+
 ### Preparing incomplete files
 
 `PreloadManager` tracks a source that arrives in pieces: `begin` returns a
