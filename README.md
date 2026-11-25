@@ -31,6 +31,7 @@ Cargo feature flags:
 | `native-audio` | Plays the audio carried by a source on native platforms through the in-process audio backend. The browser owns sound itself. |
 | `desktop` | The `cargo run` window shell and wgpu renderer. Kept out of `player` so mobile apps do not pull in the desktop host. |
 | `linux-gstreamer` | Linux decoding through GStreamer. Without it, Linux builds and `is_supported()` returns `false`. |
+| `upstream-video` | Additive zero-copy presentation via Cranpose 0.28's `cranpose::PlayerSurface` and `cranpose_services::DecodedFrames`. Opt-in; the default CPU-RGBA path is unchanged. |
 
 ```sh
 cargo check                                   # default: widget + player
@@ -389,6 +390,24 @@ Rule: **use one handle for both picture and controls**. Calling `Video(source, .
 | `parse_subtitles(&str)`, `active_at(&[SubtitleCue], Duration)` | SRT/WebVTT parsing and cue lookup. |
 
 HLS caveat: `rememberVideoPlayer` always calls `open`, never `open_hls`. A server URL like `/stream?id=123` is therefore treated as a plain file and will fail. Either make the URL path end in `.m3u8` before the query, or use the engine layer and call `VideoPlayer::open_hls` yourself.
+
+### Zero-copy presentation (opt-in)
+
+On the `v028-migration` line, the `upstream-video` feature re-exports Cranpose
+0.28's `PlayerSurface` as `VideoHardwareSurface`. An application that owns an
+upstream `DecodedFrames` source can present it directly:
+
+```text
+use cranpose_video::VideoHardwareSurface;
+VideoHardwareSurface(frames, Modifier::empty().fill_max_width(), ContentScale::Fit);
+```
+
+That path is supplied by Cranpose's own hardware decode foundation (Metal on
+Apple, Vulkan AHardwareBuffer import on Android) and does not pass through this
+crate's CPU RGBA buffer. It is **not** claimed as verified on a device here:
+Cranpose itself documents that the surface draws nothing where the GPU lacks
+the import extensions or renders through OpenGL ES. The crate's own
+`Video`/`VideoFrame` path remains the tested CPU fallback.
 
 ### Controller and streaming policy
 

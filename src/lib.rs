@@ -77,6 +77,10 @@ pub use decoder::{DecodedFrame, VideoDecoder};
 pub use disk_cache::DiskCache;
 pub(crate) use diagnostics::diag;
 pub use diagnostics::set_diagnostic_sink;
+#[cfg(feature = "upstream-video")]
+pub use cranpose::PlayerSurface as VideoHardwareSurface;
+#[cfg(feature = "upstream-video")]
+pub use cranpose_services::{DecoderConfig, DecoderOutput, DecodedFrames};
 pub use error::VideoError;
 pub use events::{EventBus, PlaybackEventKind, PlaybackEventRecord};
 pub use feed::{

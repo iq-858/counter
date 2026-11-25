@@ -40,6 +40,11 @@ linux-gstreamer = ["dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video", 
 # pays nothing for an audio device. The browser plays sound itself and needs no
 # part of this feature.
 native-audio = ["dep:cranpose-media", "dep:cranpose-services", "dep:cpal"]
+# Additive zero-copy presentation path from Cranpose 0.28. An application that
+# owns an upstream `VideoDecoder` passes its `DecodedFrames` to the re-exported
+# `VideoHardwareSurface` (cranpose::PlayerSurface). The CPU-RGBA path stays the
+# default and is unchanged.
+upstream-video = ["widget", "dep:cranpose-services", "cranpose/video"]
 
 [dependencies]
 cranpose = { version = "0.28.0", optional = true, default-features = false, features = [
