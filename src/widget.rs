@@ -138,6 +138,15 @@ impl VideoPlayerHandle {
         }
     }
 
+    /// Whether the clock is currently moving.
+    ///
+    /// A convenience for the `isPlaying` state in the Media3-style API. Unlike
+    /// `state() == Playing`, a failed source returns `false` rather than a
+    /// state an application has to interpret.
+    pub fn is_playing(&self) -> bool {
+        self.player().map_or(false, VideoPlayer::is_playing)
+    }
+
     /// How fast the clock runs.
     pub fn speed(&self) -> f32 {
         self.player().map_or(1.0, VideoPlayer::speed)
@@ -424,6 +433,27 @@ fn progress_visual(value: f32, track_extent: f32, thumb_offset: f32) {
 /// window.
 #[composable]
 fn picture(handle: VideoPlayerHandle, modifier: Modifier) {
+    picture_with(handle, modifier, None);
+}
+
+/// Draws the picture for a handle the screen owns, showing `poster` until the
+/// first decoded frame arrives and after a source change clears the old one.
+///
+/// This is the "shutter" pattern: a poster occupies the same box as the
+/// picture, so switching clips never flashes the previous clip's last frame or
+/// an empty box. Pass a composable closure that draws inside `modifier`.
+#[composable]
+pub fn VideoFrameWithPoster(
+    handle: VideoPlayerHandle,
+    modifier: Modifier,
+    poster: impl Fn() + 'static,
+) {
+    picture_with(handle, modifier, Some(Rc::new(poster)));
+}
+
+/// The frame pump shared by [`VideoFrame`] and [`VideoFrameWithPoster`].
+#[composable]
+fn picture_with(handle: VideoPlayerHandle, modifier: Modifier, poster: Option<Rc<dyn Fn()>>) {
     let picture = rememberMutableStateOf(|| None::<ImageBitmap>);
     let failure = handle.player().err();
     let frames = handle;
@@ -473,7 +503,10 @@ fn picture(handle: VideoPlayerHandle, modifier: Modifier) {
                 1.0,
                 None,
             ),
-            None => Spacer(modifier),
+            None => match poster {
+                Some(shutter) => shutter(),
+                None => Spacer(modifier),
+            },
         },
     };
 }

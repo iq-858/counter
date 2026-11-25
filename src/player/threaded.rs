@@ -308,6 +308,9 @@ impl Worker {
             Command::SetMuted(muted) => self.decoder.set_muted(muted),
             Command::SetVolume(volume) => self.decoder.set_volume(volume),
             Command::SetAudioGroup(group) => self.decoder.set_audio_group(group),
+            Command::SelectAudioTrack(index) => self.decoder.set_audio_track(index),
+            Command::SelectSubtitleTrack(index) => self.decoder.set_subtitle_track(index),
+            Command::SetLoopRange(range) => self.decoder.set_loop_range(range),
             Command::Stop => {
                 // A backend that owns a platform clock keeps it running until it
                 // is told to stop. Seeking alone only moves its media time.
@@ -350,6 +353,14 @@ impl Worker {
             #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
             self.shared
                 .adopt_capabilities(self.decoder.is_live(), self.decoder.is_seekable());
+            // A network backend states how far it has filled its window; a file
+            // backend says idle. Publishing it here keeps a spinner honest
+            // without a second thread polling the decoder.
+            let buffering = self.decoder.buffering();
+            if !buffering.is_idle() || !self.shared.buffering().is_idle() {
+                self.shared
+                    .set_buffering(buffering.state(), buffering.fraction());
+            }
             let native = !self.native_refused && self.decoder.output_format() == PixelFormat::Nv12;
             let mut buffer = std::mem::take(&mut self.scratch);
             let mut planes = std::mem::take(&mut self.planes);
@@ -400,9 +411,15 @@ impl Worker {
                         // The source reached its end and repeats. Rewinding
                         // through the open decoder costs one seek; reopening the
                         // file would cost a read, a device setup and a fresh
-                        // picture buffer, every time round.
-                        self.shared.set_position(Duration::ZERO);
-                        self.rewind(Duration::ZERO);
+                        // picture buffer, every time round. A repeating section
+                        // goes back to its own start instead of the file's.
+                        let target = self
+                            .shared
+                            .loop_range()
+                            .map_or(Duration::ZERO, |range| range.start());
+                        self.shared.set_position(target);
+                        self.rewind(target);
+                        self.shared.emit_looped(target);
                         continue;
                     }
                     self.ended = true;
@@ -490,6 +507,24 @@ impl Worker {
                 // A run of these is the signature of a decoder that cannot keep
                 // up, so count and record them for the diagnostics snapshot.
                 self.shared.note_reanchor(pts);
+            }
+
+            // A repeating section ends before the media does. The play head
+            // passing the section's end is the whole trigger: rewind through the
+            // open decoder rather than waiting for the file's own end, which for
+            // a passage in the middle of a long file would never come.
+            if let Some(range) = self.shared.loop_range()
+                && self.shared.is_playing()
+                && self.shared.is_seekable()
+                && range.is_past_end(pts)
+            {
+                self.scratch = buffer;
+                self.planes = planes;
+                self.last_pts = None;
+                self.shared.set_position(range.start());
+                self.rewind(range.start());
+                self.shared.emit_looped(range.start());
+                continue;
             }
 
             let generation = self.generation;

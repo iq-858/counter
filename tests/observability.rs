@@ -115,6 +115,9 @@ fn kind(event: &PlaybackEvent) -> &'static str {
         PlaybackEvent::SpeedChanged { .. } => "speed",
         PlaybackEvent::Muted { .. } => "muted",
         PlaybackEvent::VolumeChanged { .. } => "volume",
+        PlaybackEvent::BufferingChanged { .. } => "buffering",
+        PlaybackEvent::TrackChanged { .. } => "track",
+        PlaybackEvent::Looped { .. } => "looped",
         PlaybackEvent::Closed => "closed",
     }
 }
@@ -153,7 +156,7 @@ fn controls_emit_events_in_order() {
 
     let records = player.events();
     let order: Vec<&str> = records.iter().map(|record| kind(record.event())).collect();
-    // The events issued by the screen are synchronous and keep their order; a
+    // The events issue by the screen are synchronous and keep their order; a
     // decoder may interleave a re-anchor between them, which is why the check
     // looks for a subsequence rather than adjacent records.
     let wanted = [

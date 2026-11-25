@@ -4,7 +4,9 @@
 use std::{cell::Cell, rc::Rc, time::Duration};
 
 use cranpose_ui::{Modifier, Size, run_test_composition, widgets::slider::SliderSpec};
-use cranpose_video::{VideoControls, VideoFrame, VideoProgressSliderWith, rememberVideoPlayer};
+use cranpose_video::{
+    VideoControls, VideoFrame, VideoFrameWithPoster, VideoProgressSliderWith, rememberVideoPlayer,
+};
 
 const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/clip.mp4");
 
@@ -36,6 +38,16 @@ fn picture_composes_from_a_caller_owned_handle() {
     run_test_composition(move || {
         let handle = rememberVideoPlayer(CLIP);
         VideoFrame(handle, Modifier::empty());
+    });
+}
+
+#[test]
+fn picture_composes_with_a_shutter_until_the_first_frame() {
+    // Media3-style shutter: a poster occupies the picture's box so a clip
+    // switch never shows the previous clip's last frame.
+    run_test_composition(move || {
+        let handle = rememberVideoPlayer(CLIP);
+        VideoFrameWithPoster(handle, Modifier::empty(), || {});
     });
 }
 

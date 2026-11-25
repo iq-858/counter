@@ -134,6 +134,25 @@ pub enum PlaybackEvent {
         /// The new level, from 0.0 to 1.0.
         volume: f32,
     },
+    /// The decoder started or stopped waiting for media.
+    BufferingChanged {
+       /// What the decoder is doing about media it does not have yet.
+        state: crate::buffer::BufferingState,
+        /// How much of the window is filled, `0.0..=1.0`.
+        fraction: f32,
+    },
+    /// The source repeated.
+    Looped {
+        /// Where the repeat went back to.
+        position: Duration,
+    },
+    /// One of the source's tracks was selected or turned off.
+    TrackChanged {
+        /// Which kind of track changed.
+        kind: crate::tracks::TrackKind,
+        /// The backend index now selected, or `None` for off.
+        index: Option<usize>,
+    },
     /// The player was closed and its decoder released.
     Closed,
 }
@@ -446,7 +465,7 @@ impl PlaybackDiagnostics {
         self.frames_published
     }
 
-    /// How many times the clock was pulled back to a late picture.
+    /// How many times the lock was pulled back to a late picture.
     pub fn reanchors(&self) -> u64 {
         self.reanchors
     }

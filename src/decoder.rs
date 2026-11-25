@@ -175,6 +175,47 @@ pub trait VideoDecoder: Send {
     /// groups. The default is a no-op for decoders without this notion.
     fn set_audio_group(&mut self, _group: u64) {}
 
+    /// Selects an audio track by the backend's own index, or turns sound off
+    /// with `None`.
+    ///
+    /// The default ignores it, which is right for a decoder that carries one
+    /// track. A backend with a demuxer overrides this and reports the tracks it
+    /// found through [`media`](Self::media).
+    fn set_audio_track(&mut self, _index: Option<usize>) {}
+
+    /// Selects a subtitle track by the backend's own index, or turns subtitles
+    /// off with `None`.
+    ///
+    /// The default ignores it. A backend that renders or exposes timed text
+    /// overrides it.
+    fn set_subtitle_track(&mut self, _index: Option<usize>) {}
+
+    /// Repeats only `range` instead of the whole source, or the whole source
+    /// again with `None`.
+    ///
+    /// The player already rewinds itself when the play head passes the range's
+    /// end, so a backend only needs this when its own demuxer can loop more
+    /// cheaply. The default ignores it.
+    fn set_loop_range(&mut self, _range: Option<crate::loop_range::LoopRange>) {}
+
+    /// How far the backend has filled its window, for a spinner or a ring.
+    ///
+    /// The default reports idle, which is right for a decoder that reads a file
+    /// as fast as the player asks. A network backend overrides this so a screen
+    /// can show progress instead of an endless spinner.
+    fn buffering(&self) -> crate::buffer::Buffering {
+        crate::buffer::Buffering::new()
+    }
+
+    /// What the backend learned about the container, its codecs and its tracks.
+    ///
+    /// The default states nothing, which is right for a decoder that reads one
+    /// elementary stream. A backend with a demuxer overrides this so an about
+    /// screen and a track menu have something to show.
+    fn media(&self) -> crate::media::MediaInfo {
+        crate::media::MediaInfo::default()
+    }
+
     /// Whether the backend currently plays no sound.
     ///
     /// The player reads this once when it opens, so a browser that starts an

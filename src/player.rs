@@ -78,6 +78,12 @@ pub(crate) enum Command {
     SetVolume(f32),
     /// Assign the audio group (same group = mutually exclusive sound).
     SetAudioGroup(u64),
+    /// Select an audio track by backend index, or turn sound off with `None`.
+    SelectAudioTrack(Option<usize>),
+    /// Select a subtitle track by backend index, or turn subtitles off.
+    SelectSubtitleTrack(Option<usize>),
+    /// Repeat only this section, or the whole source again with `None`.
+    SetLoopRange(Option<crate::loop_range::LoopRange>),
     /// The player is going away.
     Shutdown,
 }
@@ -159,6 +165,16 @@ struct Inner {
     native_nv12: bool,
     /// Whether the source repeats when it reaches its end.
     looping: bool,
+    /// A section that repeats instead of the whole source, when one is set.
+    loop_range: Option<crate::loop_range::LoopRange>,
+    /// The audio tracks the source carries and which one is selected.
+    audio_tracks: crate::tracks::TrackList,
+    /// The subtitle tracks the source carries and which one is selected.
+    subtitle_tracks: crate::tracks::TrackList,
+    /// How far the decoder has filled its window, for a spinner.
+    buffering: crate::buffer::Buffering,
+    /// What the backend stated about the container and its tracks.
+    media: crate::media::MediaInfo,
     /// Whether a picture has been published in this session. The `Playing`
     /// event is held until the first one exists.
     has_frame: bool,
@@ -209,6 +225,11 @@ impl Shared {
                 pixel_format: PixelFormat::Rgba8,
                 native_nv12: false,
                 looping: false,
+                loop_range: None,
+                audio_tracks: crate::tracks::TrackList::new(crate::tracks::TrackKind::Audio),
+                subtitle_tracks: crate::tracks::TrackList::new(crate::tracks::TrackKind::Subtitle),
+                buffering: crate::buffer::Buffering::new(),
+                media: crate::media::MediaInfo::default(),
                 has_frame: false,
                 playing_pending: false,
                 recovering: false,
@@ -392,6 +413,99 @@ impl Shared {
         self.inner.lock().looping = looping;
     }
 
+    /// The section that repeats, when one is set.
+    pub(crate) fn loop_range(&self) -> Option<crate::loop_range::LoopRange> {
+        self.inner.lock().loop_range
+    }
+
+    /// Sets or clears the repeating section.
+    pub(crate) fn set_loop_range(&self, range: Option<crate::loop_range::LoopRange>) {
+        self.inner.lock().loop_range = range;
+    }
+
+    /// The audio tracks and the current selection.
+    pub(crate) fn audio_tracks(&self) -> crate::tracks::TrackList {
+        self.inner.lock().audio_tracks.clone()
+    }
+
+    /// The subtitle tracks and the current selection.
+    pub(crate) fn subtitle_tracks(&self) -> crate::tracks::TrackList {
+        self.inner.lock().subtitle_tracks.clone()
+    }
+
+    /// Selects an audio track and records the change.
+    ///
+    /// Returns `false` when the index is not in the list.
+    pub(crate) fn select_audio_track(&self, index: Option<usize>) -> bool {
+        let mut inner = self.inner.lock();
+        if !inner.audio_tracks.select(index) {
+            return false;
+        }
+        self.emit(&inner, PlaybackEvent::TrackChanged {
+            kind: crate::tracks::TrackKind::Audio,
+            index,
+        });
+        true
+    }
+
+    /// Selects a subtitle track and records the change.
+    ///
+    /// Returns `false` when the index is not in the list.
+    pub(crate) fn select_subtitle_track(&self, index: Option<usize>) -> bool {
+        let mut inner = self.inner.lock();
+        if !inner.subtitle_tracks.select(index) {
+            return false;
+        }
+        self.emit(&inner, PlaybackEvent::TrackChanged {
+            kind: crate::tracks::TrackKind::Subtitle,
+            index,
+        });
+        true
+    }
+
+    /// The buffering state a screen reads.
+    pub(crate) fn buffering(&self) -> crate::buffer::Buffering {
+        self.inner.lock().buffering
+    }
+
+    /// Records a buffering change and emits it when it differs.
+    pub(crate) fn set_buffering(
+        &self,
+        state: crate::buffer::BufferingState,
+        fraction: f32,
+    ) {
+        let mut inner = self.inner.lock();
+        let before = inner.buffering;
+        inner.buffering.set(state, fraction);
+        let after = inner.buffering;
+        if before.state() != after.state() || before.fraction() != after.fraction() {
+            self.emit(&inner, PlaybackEvent::BufferingChanged {
+                state: after.state(),
+                fraction: after.fraction(),
+            });
+        }
+    }
+
+    /// What the backend stated about the container and its tracks.
+    pub(crate) fn media(&self) -> crate::media::MediaInfo {
+        self.inner.lock().media.clone()
+    }
+
+    /// Records what the backend stated about the source.
+    pub(crate) fn set_media(&self, media: crate::media::MediaInfo) {
+        let mut inner = self.inner.lock();
+        inner.audio_tracks = crate::tracks::TrackList::new(crate::tracks::TrackKind::Audio);
+        inner.subtitle_tracks = crate::tracks::TrackList::new(crate::tracks::TrackKind::Subtitle);
+        for track in &media.tracks {
+            match track.kind {
+                crate::tracks::TrackKind::Audio => inner.audio_tracks.push(track.clone()),
+                crate::tracks::TrackKind::Subtitle => inner.subtitle_tracks.push(track.clone()),
+            }
+        }
+        inner.audio_tracks.select_default();
+        inner.media = media;
+    }
+
     /// Folds one decode's cost into the rolling average the diagnostics read.
     pub(crate) fn note_decode(&self, took: Duration) {
         self.telemetry.note_decode(took);
@@ -567,6 +681,11 @@ impl Shared {
         // playlist reveals a live stream — never granted to one that refused it.
         inner.live |= live;
         inner.seekable &= seekable;
+    }
+
+    /// Records that the source repeated back to `position`.
+    pub(crate) fn emit_looped(&self, position: Duration) {
+        self.emit_event(PlaybackEvent::Looped { position });
     }
 
     /// Records that the player was closed.
@@ -823,7 +942,7 @@ pub struct VideoPlayer {
 impl VideoPlayer {
     /// Opens a video with the decoder this build chose for the platform.
     ///
-    /// Returns [`VideoError::Unsupported`] on a target the crate carries no
+    /// Returns [`VideoError::Unsupported`]on a target the crate carries no
     /// decoder for; [`with_decoder`](Self::with_decoder) still works there.
     ///
     /// # Errors
@@ -922,8 +1041,16 @@ impl VideoPlayer {
                 info.height
             ),
         );
+        // A backend with a demuxer already knows what the container holds, so
+        // the track lists and the about-screen facts are filled before the first
+        // picture. A decoder that states nothing leaves the lists empty and the
+        // API reports no tracks, which is the truth for a raw elementary stream.
+        let media = decoder.media();
         let shared = Arc::new(Shared::new(info, live, seekable, muted, volume));
         shared.set_pixel_format(pixel_format);
+        if !media.is_empty() {
+            shared.set_media(media);
+        }
         // Hand the decoder the close signal before it moves to the decode
         // thread. A network decoder checks it inside a blocking read so closing
         // the player does not wait on a dead request.
@@ -945,7 +1072,7 @@ impl VideoPlayer {
 
     /// The size, duration and rotation the decoder knows.
     ///
-    /// A browser learns them from the media's metadata, so on the web the size
+    /// A browser learns the from the media's metadata, so on the web the size
     /// reads zero until the first picture arrives and the player updates it;
     /// [`state`](Self::state) is [`VideoState::Loading`] until then.
     pub fn info(&self) -> VideoInfo {
@@ -981,6 +1108,14 @@ impl VideoPlayer {
     /// What the player is doing now.
     pub fn state(&self) -> VideoState {
         self.shared.state()
+    }
+
+    /// Whether the clock is currently moving.
+    ///
+    /// The Media3-style `isPlaying` convenience; derived from `state()`, so it
+    /// needs no extra shared state and cannot disagree with `state()`.
+    pub fn is_playing(&self) -> bool {
+        matches!(self.state(), crate::VideoState::Playing)
     }
 
     /// Where playback is, between zero and [`duration`](Self::duration).
@@ -1325,7 +1460,7 @@ impl VideoPlayer {
     /// The picture is the newest one decoded. A paused player publishes one
     /// after opening and one after each seek, so a screen has a picture to
     /// show at every position it stops at. The picture leaves the slot when it
-    /// is taken, so the screen keeps what it uploaded until the next one
+    /// is taken, so the screen keeps what it uploaded until the next on
     /// arrives. Hand it back with [`recycle`](Self::recycle) once it is on the
     /// screen; dropping it works too, and only costs the buffer.
     pub fn take_frame(&self) -> Option<VideoFrame> {
@@ -1374,6 +1509,97 @@ impl VideoPlayer {
     /// Whether the source repeats when it reaches its end.
     pub fn is_looping(&self) -> bool {
         self.shared.is_looping()
+    }
+
+    /// Repeats only a section of the source instead of the whole file.
+    ///
+    /// A language drill, a dance loop or a clip review wants one passage to
+    /// repeat; rewinding to the top of the file each time makes that useless.
+    /// The range is clamped to the duration, and playback jumps back to its
+    /// start when the play head reaches its end. Passing `None` returns to
+    /// whole-file looping (or no looping, per [`set_looping`](Self::set_looping)).
+    ///
+    /// A range implies looping: setting one turns looping on, so the section
+    /// repeats without a second call. A live stream cannot seek back, so the
+    /// range is ignored there.
+    pub fn set_loop_range(&self, range: Option<crate::loop_range::LoopRange>) {
+        let range = range.map(|range| range.clamped_to(self.duration()));
+        self.shared.set_loop_range(range);
+        self.shared.set_looping(range.is_some() || self.shared.is_looping());
+        let _ = self.engine.dispatch(Command::SetLoopRange(range));
+    }
+
+    /// The section that repeats, when one is set.
+    pub fn loop_range(&self) -> Option<crate::loop_range::LoopRange> {
+        self.shared.loop_range()
+    }
+
+    /// What the backend learned about the container, its codecs and its
+    /// bitrate, for an about screen or a quality picker.
+    ///
+    /// A decoder that states nothing returns the empty value, whose
+    /// [`is_empty`](crate::MediaInfo::is_empty) is true.
+    pub fn media(&self) -> crate::media::MediaInfo {
+        self.shared.media()
+    }
+
+    /// The audio tracks the source carries, with the current selection.
+    ///
+    /// Empty until a backend states them, which most do at open time. The list
+    /// is a snapshot: read it again after a change.
+    pub fn audio_tracks(&self) -> crate::tracks::TrackList {
+        self.shared.audio_tracks()
+    }
+
+    /// The subtitle tracks the source carries, with the current selection.
+    pub fn subtitle_tracks(&self) -> crate::tracks::TrackList {
+        self.shared.subtitle_tracks()
+    }
+
+    /// Selects an audio track by its backend index, or turns sound off with
+    /// `None`.
+    ///
+    /// # Errors
+    ///
+    /// Fails with [`VideoError::Closed`] after [`close`](Self::close), and with
+    /// [`VideoError::UnsupportedOperation`] when the index is not one the
+    /// source carries.
+    pub fn set_audio_track(&self, index: Option<usize>) -> Result<(), VideoError> {
+        self.check()?;
+        if !self.shared.select_audio_track(index) {
+            return Err(VideoError::UnsupportedOperation {
+                operation: "that audio track",
+            });
+        }
+        self.engine.dispatch(Command::SelectAudioTrack(index))
+    }
+
+    /// Selects a subtitle track by its backend index, or turns subtitles off
+    /// with `None`.
+    ///
+    /// # Errors
+    ///
+    /// Fails with [`VideoError::Closed`] after [`close`](Self::close), and with
+    /// [`VideoError::UnsupportedOperation`] when the index is not one the
+    /// source carries.
+    pub fn set_subtitle_track(&self, index: Option<usize>) -> Result<(), VideoError> {
+        self.check()?;
+        if !self.shared.select_subtitle_track(index) {
+            return Err(VideoError::UnsupportedOperation {
+                operation: "that subtitle track",
+            });
+        }
+        self.engine.dispatch(Command::SelectSubtitleTrack(index))
+    }
+
+    /// How far the decoder has filled its window, for a spinner or a ring.
+    pub fn buffering(&self) -> crate::buffer::Buffering {
+        self.shared.buffering()
+    }
+
+    /// What the backend stated about the container, its codecs and its tracks.
+    pub fn media_info(&self) -> crate::media::MediaInfo {
+        self.shared.media()
     }
 
     /// Signals the decode thread to stop and releases the player's own state.
@@ -1628,7 +1854,7 @@ mod tests {
         assert_eq!(decoder.volume(), 1.0);
     }
 
-    #[test]
+   #[test]
     fn a_player_takes_its_initial_audio_state_from_the_decoder() {
         let (decoder, _, _) = AudioDecoder::new(true, 0.4);
         let player = VideoPlayer::with_decoder(decoder).expect("the player opens");
@@ -1762,7 +1988,7 @@ mod tests {
         assert_eq!(player.recovery_events().last(), Some(&SessionEvent::Closed));
 
         // A detached worker's late failure must not be appended after `Closed`.
-        session.failed("test.device", "late failure after close");
+       session.failed("test.device", "late failure after close");
         assert_eq!(
             player.recovery_events().last(),
             Some(&SessionEvent::Closed),

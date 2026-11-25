@@ -121,7 +121,7 @@ Constructors: `VideoSource::path(...)`, `VideoSource::url(...)`, `VideoSource::b
 | `set_speed(f32)`, `set_looping(bool)` | Rate and repeat (`set_looping` returns `()` here). |
 | `set_muted(bool)`, `set_volume(f32)` | Audio carried by the backend. |
 | `take_frame()` | Take the newest decoded `VideoFrame`; call every frame you want to draw. |
-| `position()`, `duration()`, `state()`, `info()`, `decoded_size()` | Live reads. `duration()` is `None` for live streams. |
+| `position()`, `duration()`, `state()`, `is_playing()`, `info()`, `decoded_size()` | Live reads. `duration()` is `None` for live streams; `is_playing()` is the Media3-style `isPlaying` convenience derived from `state()`. |
 | `is_closed()`, `close()` | Lifecycle; `close()` needs `&mut self`. |
 
 ```rust,no_run
@@ -143,12 +143,204 @@ fn play_file(path: &str) -> Result<(), cranpose_video::VideoError> {
 }
 ```
 
+### Tracks, media facts, looping and buffering
+
+Four additions to the engine layer. All four are also readable from
+`VideoPlayerHandle` inside a `#[composable]`.
+
+#### Container facts: `MediaInfo`
+
+`media()` returns what the backend learned at open time. A decoder that states
+nothing returns the empty value, whose `is_empty()` is `true`.
+
+| Item | Meaning |
+|---|---|
+| `container` | `Container::Mp4`, `Matroska`, `MpegTs`, `Elementary` or `Unknown`. |
+| `video_codec`, `audio_codec` | The names the container states, such as `"h264"` and `"aac"`. |
+| `bitrate` | Bits per second, when stated. `kilobit_rate()` for a display. |
+| `duration` | `None` for a live stream. |
+| `tracks` | Every stream, in the backend's own order. |
+| `count_of(kind)` | How many streams of one `TrackKind` there are. |
+| `summary()` | One line for a log or an about screen. |
+
+```rust,no_run
+use cranpose_video::{TrackKind, VideoPlayer};
+
+fn describe(player: &VideoPlayer) {
+    let media = player.media();
+    if media.is_empty() {
+        println!("the backend states nothing about this source");
+        return;
+    }
+    println!("{}", media.summary());
+    println!(
+        "{} audio, {} subtitle",
+        media.count_of(TrackKind::Audio),
+        media.count_of(TrackKind::Subtitle),
+    );
+}
+```
+
+#### Track selection: `TrackList`, `TrackInfo`
+
+`audio_tracks()` and `subtitle_tracks()` each return a snapshot `TrackList`.
+An audio list starts on the container's default track; a subtitle list starts
+**off**, because showing subtitles unasked is not what a viewer expects.
+
+| Method | Meaning |
+|---|---|
+| `len()`, `is_empty()`, `tracks()` | The streams it holds. |
+| `selected()` / `selected_track()` | The selected backend index / its `TrackInfo`. |
+| `contains(index)` | Whether that index is one of the streams. |
+| `select(index)` | Select by backend index, or `None` to turn the kind off. |
+| `select_language(tag, forced_only)` | First stream that speaks `tag`; returns the index it chose. |
+| `default_index()` / `default_on()` | The rule the list would start on. |
+
+`TrackInfo::speaks(tag)` compares the **primary** subtag, so `"en"` matches
+`"en-GB"`. Selection is by the backend's own index, not by a position inside
+the list: a subtitle stream that sits after two audio streams has index `2`.
+
+```rust,no_run
+use cranpose_video::{VideoError, VideoPlayer};
+
+fn pick_arabic(player: &VideoPlayer) -> Result<(), VideoError> {
+    let mut tracks = player.audio_tracks();
+    if let Some(index) = tracks.select_language("ar", false) {
+        player.set_audio_track(Some(index))?;
+    }
+    // Off is always allowed; an absent index is refused and changes nothing.
+    player.set_subtitle_track(None)?;
+    Ok(())
+}
+```
+
+#### Looping a section: `LoopRange`
+
+`set_loop_range(Some(range))` repeats only that section. Setting a range also
+turns looping on, so a screen does not need two calls.
+
+`LoopRange::new(start, end)` orders the pair itself, so passing the ends the
+other way round still works, and widens a span shorter than `MIN_RANGE`
+(50 ms) to it — a loop never spins the decode thread on the same frames.
+
+| Method | Meaning |
+|---|---|
+| `new(start, end)` / `from_length(start, length)` | Build. |
+| `start()`, `end()`, `length()` | Bounds. |
+| `contains(position)` | Start inclusive, end exclusive. |
+| `is_past_end(position)` | Whether the play head should wrap. |
+| `fraction_at(position)` | Progress through the range, `0.0..=1.0`. |
+| `clamped_to(duration)` | Fit a range to the source length; takes `Option<Duration>` because a live stream has none. |
+
+```rust,no_run
+use cranpose_video::{LoopRange, VideoPlayer};
+use std::time::Duration;
+
+fn repeat_intro(player: &VideoPlayer) {
+    player.set_loop_range(Some(LoopRange::new(
+        Duration::from_secs(2),
+        Duration::from_secs(5),
+    )));
+    // Back to repeating the whole source:
+    player.set_loop_range(None);
+}
+```
+
+#### Buffering: `Buffering`, `BufferingState`
+
+`buffering()` reports how far the backend has filled its window, so a screen
+shows a real ring instead of an endless spinner.
+
+| Item | Meaning |
+|---|---|
+| `state()` | `Idle`, `Buffering`, or `Filling` (decoding ahead of the clock). |
+| `fraction()` | `0.0..=1.0` of the window. **An idle buffer is `0.0`, not `1.0`.** |
+| `percent()` | The same as `0..=100`, for a ring. |
+| `is_idle()`, `is_waiting()` | The flags to branch on. |
+| `since()`, `held_for(now)` | When the state last changed, and for how long. |
+| `is_stalled(now, limit)` | Waiting longer than `limit` — offer a retry. |
+
+```rust,no_run
+use cranpose_video::VideoPlayer;
+use std::time::{Duration, Instant};
+
+fn overlay(player: &VideoPlayer) {
+    let buffering = player.buffering();
+    if buffering.is_waiting() {
+        println!("buffering {}%", buffering.percent());
+        if buffering.is_stalled(Instant::now(), Duration::from_secs(10)) {
+            println!("stalled — offer a retry");
+        }
+    }
+}
+```
+
+#### Playback settings: `PlaybackParameters`, `RepeatMode`
+
+These are pure data types, usable before a player exists. Both follow the
+Media3 model and are exported from the crate root.
+
+| Item | Meaning |
+|---|---|
+| `PlaybackParameters::new()` | Speed `1.0`, pitch `1.0`. |
+| `with_speed(speed)` / `from_parts(speed, pitch)` | Clamped into `MIN_SPEED..=MAX_SPEED` (`0.25..=4.0`). |
+| `speed()` / `pitch()` | The two multipliers. Pitch `1.0` keeps voices natural when speed changes. |
+| `RepeatMode::{Off, One, All}` | Stop, repeat this item, repeat the list. `next()` cycles them for a button. |
+| `repeats_at(position, duration, has_next)` | Pure decision a player makes at the end; a live source with no duration never rewinds. |
+
+```rust,no_run
+use cranpose_video::{PlaybackParameters, RepeatMode};
+
+let settings = PlaybackParameters::with_speed(1.5);
+assert_eq!(settings.speed(), 1.5);
+assert_eq!(settings.pitch(), 1.0); // speed without chipmunk voices
+assert_eq!(RepeatMode::Off.next(), RepeatMode::One);
+```
+
+#### Player pool: `PlayerPool`, `PooledPlayer`
+
+For a feed, [`PlayerPool`] joins the decoder budget with audio ownership. A
+slot reserved at `Priority::Active` is the audible one; promoting a slot moves
+sound to it; dropping a slot releases its decode budget immediately and hands
+audio to the highest-ranked survivor. All handles share one bounded state.
+
+```rust,no_run
+use cranpose_video::{PlayerPool, Priority};
+
+let pool = PlayerPool::new();
+let first = pool.reserve(Priority::Active);
+let next = pool.reserve(Priority::Next);
+pool.promote(next.id(), Priority::Active);
+assert!(next.is_audio_owner());
+pool.release(first.id());
+assert_eq!(pool.len(), 1);
+```
+
+Use this alongside the **one visible player** rule in the Reels scenario: the
+pool bounds how many clips may stay warm, while the pager decides which of them
+actually composes a picture.
+
+#### Events
+
+Three variants join `PlaybackEvent`, so a diagnostics screen sees these
+changes in order with everything else: `TrackChanged { kind, index }`,
+`BufferingChanged { state, fraction }` and `Looped`.
+
+#### Writing your own backend
+
+`VideoDecoder` gained five **defaulted** methods — `media()`, `buffering()`,
+`set_audio_track()`, `set_subtitle_track()` and `set_loop_range()` — so every
+existing backend keeps compiling. Override only what your demuxer can state;
+the defaults are correct for a decoder that carries one track and reads a file
+as fast as the player asks.
+
 ### UI layer: `rememberVideoPlayer`, `VideoPlayerHandle`, composables
 
 | Function | Meaning | Use it when |
 |---|---|---|
 | `rememberVideoPlayer(source)` | Opens one player keyed by source; returns a `VideoPlayerHandle`. Draws nothing. | You want custom controls. |
 | `VideoFrame(handle, modifier)` | Draws the picture for **that** handle, owning the frame pump. | You already have a handle. |
+| `VideoFrameWithPoster(handle, modifier, poster)` | Same picture, but shows a poster until the first frame and after a source change. | You want a shutter instead of a blank box on clip switches. |
 | `Video(source, modifier)` | Shortcut: `rememberVideoPlayer(source)` + picture. | No custom controls needed. |
 | `VideoWithControls(source, modifier)` | Picture plus the stock buttons and progress slider. | You want ready-made controls. |
 | `VideoControls(handle, modifier)` | Stock controls for a handle you own, with your own layout. | Custom layout, stock controls. |
@@ -156,7 +348,7 @@ fn play_file(path: &str) -> Result<(), cranpose_video::VideoError> {
 | `VideoProgressSliderWith(handle, modifier, spec, content)` | Seek bar with your own thumb/track composable. | Fully custom progress UI. |
 | `progress_fraction_for(position, duration)` | Pure helper returning `0.0..=1.0`. | Custom sliders. |
 
-`VideoPlayerHandle` exposes `play`, `pause`, `toggle`, `stop`, `seek`, `seek_fraction`, `set_speed`, `set_looping`, `is_looping`, `set_muted`, `is_muted`, `set_volume`, `volume`, `position`, `duration`, `state`, `speed`, `info`, `decoded_size`. All setters return `Result<(), VideoError>`; getters are pure. Getters return a neutral value instead of failing when the source failed to open.
+`VideoPlayerHandle` exposes `play`, `pause`, `toggle`, `stop`, `seek`, `seek_fraction`, `set_speed`, `set_looping`, `is_looping`, `is_playing`, `set_muted`, `is_muted`, `set_volume`, `volume`, `position`, `duration`, `state`, `speed`, `info`, `decoded_size`. All setters return `Result<(), VideoError>`; getters are pure. Getters return a neutral value instead of failing when the source failed to open.
 
 ```rust,no_run
 use cranpose::{composable, prelude::*};
@@ -339,12 +531,22 @@ Practical options when a newer Cranpose arrives:
 
 The engine layer (`VideoPlayer`, `VideoSource`, decoders) does not depend on Cranpose crates and is therefore unaffected by UI-runtime upgrades. Only the `widget` feature touches Cranpose APIs.
 
+This policy was confirmed as correct by the Cranpose maintainer in [Cranpose#2477](https://github.com/samoylenkodmitry/Cranpose/issues/2477): every published crate shares the workspace version; patch releases preserve API compatibility (checked with `cargo semver-checks`), and breaking changes bump the minor. See [`docs/release.md`](https://github.com/samoylenkodmitry/Cranpose/blob/main/docs/release.md#versioning).
+
+### Relation to upstream video work
+
+Upstream is building video-first support directly on its own zero-copy hardware foundation (`VideoDecoder`, `DecodedFrames`, `PlayerSurface`, `PlayerSurfaceIntake`) under [Cranpose#2481](https://github.com/samoylenkodmitry/Cranpose/issues/2481), which supersedes #2197 and #2477. That is the authoritative path for zero-copy GPU playback, Media3 API parity, and event-driven presentation. This crate remains a **community crate on the CPU-RGBA path**; it does not claim to be that foundation.
+
+Techniques from that direction that fit here are added additively: `VideoFrameWithPoster` (shutter until the first frame), `is_playing()`, `PlaybackParameters`, `RepeatMode`, `MediaInfo`/`TrackList` facts, `Buffering`, `LoopRange`, and `PlayerPool`. What is deliberately **not** implemented here is the upstream hard agreement set: zero-copy GPU import (D3D11/Metal/AHardwareBuffer/DMABUF/WebGPU), zero steady-frame allocations, event-driven frame delivery instead of per-frame polling, and Media3 types wired into `cranpose-services`. Those need upstream internals and device benchmarks; see #2481.
+
+A widget-only iOS build previously failed because `objc2-foundation` enabled `NSNotification` without `block2`, which gates `addObserverForName_object_queue_usingBlock`. The maintainer identified this in #2477; `block2` is now enabled in `Cargo.toml`.
+
 ---
 
 ## Known limitations
 
 - macOS pacing tests are timing-sensitive and failed on the CI runner in run 45308233149.
-- The widget-only iOS CI cross-check fails on `NSNotificationCenter` observer availability with the reduced feature set; iOS playback itself was device-tested with the full app feature set and works.
+- The widget-only iOS CI cross-check previously failed on `NSNotificationCenter` observer availability; the missing `block2` feature is now enabled (maintainer guidance in #2477) and the cross-check needs a fresh CI run to confirm. iOS playback itself was device-tested with the full app feature set and works.
 - Linux needs `linux-gstreamer` plus GStreamer dev packages for decoding.
 - watchOS has no video decoder (`is_supported()` is false).
 - GPU zero-copy and HDR device rendering are **not implemented or verified** here. Playback is device-tested on Windows and iOS; no quantitative performance numbers are claimed.

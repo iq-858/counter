@@ -8,6 +8,7 @@ mod audio;
 // exist (not wasm, which plays in the browser).
 #[cfg(not(target_arch = "wasm32"))]
 mod arbitration;
+mod buffer;
 mod color;
 mod decode_result;
 mod decoder;
@@ -24,9 +25,14 @@ mod frame;
 mod hls;
 mod info;
 mod logfile;
+mod loop_range;
+mod media;
 mod pixels;
+mod playback_params;
 mod platform;
+mod pool;
 mod player;
+mod repeat_mode;
 mod resource;
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 mod session;
@@ -43,9 +49,11 @@ mod telemetry;
 ))]
 mod temp_file;
 mod time_wait;
+mod tracks;
 #[cfg(feature = "widget")]
 pub mod widget;
 
+pub use buffer::{Buffering, BufferingState};
 pub use color::{ChromaLocation, ColorInfo, ColorPrimaries, HdrMetadata, TransferFunction};
 pub use decode_result::{FrameStamp, ReadOutcome};
 pub use decoder::{DecodedFrame, VideoDecoder};
@@ -55,8 +63,13 @@ pub use error::VideoError;
 pub use frame::{ColorMatrix, ColorRange, PixelFormat, VideoFrame, YuvColor};
 pub use info::{FrameRate, Rotation, VideoInfo};
 pub use logfile::{is_logging, log_note, log_path, start_log_file, stop_log_file};
+pub use loop_range::{LoopRange, MIN_RANGE};
+pub use media::{Container, MediaInfo};
+pub use playback_params::{MAX_SPEED, MIN_SPEED, PlaybackParameters};
 pub use platform::Platform;
 pub use player::VideoPlayer;
+pub use pool::{PlayerPool, PooledPlayer};
+pub use repeat_mode::RepeatMode;
 pub use resource::{PrefetchGuard, Priority, ResourceLimits, VideoResourceManager};
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 pub use session::{
@@ -67,10 +80,12 @@ pub use source::VideoSource;
 pub use state::VideoState;
 pub use subtitle::{SubtitleCue, active_at, parse as parse_subtitles};
 pub use telemetry::{EventRecord, PlaybackDiagnostics, PlaybackEvent, SessionId};
+pub use tracks::{TrackInfo, TrackKind, TrackList};
 #[cfg(feature = "widget")]
 pub use widget::{
-    Video, VideoControls, VideoFrame, VideoPlayerHandle, VideoProgressSlider,
-    VideoProgressSliderWith, VideoWithControls, progress_fraction_for, rememberVideoPlayer,
+    Video, VideoControls, VideoFrame, VideoFrameWithPoster, VideoPlayerHandle,
+    VideoProgressSlider, VideoProgressSliderWith, VideoWithControls, progress_fraction_for,
+    rememberVideoPlayer,
 };
 
 /// The platform whose decoder this build selected.

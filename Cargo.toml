@@ -119,6 +119,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSValue",
     "NSNotification",
     "NSOperation",
+    # `addObserverForName_object_queue_usingBlock` is gated by this feature.
+    # A full app build unified it via cranpose/ios; the widget-only build needs
+    # it here (confirmed by the upstream maintainer on Cranpose#2477).
+    "block2",
 ] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = [
     "std",
