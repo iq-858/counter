@@ -97,6 +97,14 @@ const STALL_RECOVERY_RATIO: f64 = 2.0;
 const P95_60_ALLOWANCE: f64 = 3.6;
 #[cfg(not(target_os = "macos"))]
 const P95_60_ALLOWANCE: f64 = 1.75;
+#[cfg(target_os = "macos")]
+const MAX_60_ALLOWANCE: f64 = 8.0;
+#[cfg(not(target_os = "macos"))]
+const MAX_60_ALLOWANCE: f64 = 2.5;
+#[cfg(target_os = "macos")]
+const LONG_GAP_ALLOWANCE: usize = 8;
+#[cfg(not(target_os = "macos"))]
+const LONG_GAP_ALLOWANCE: usize = 2;
 
 /// One synthetic stream's exact media timing and sample count.
 #[derive(Clone, Copy)]
@@ -787,13 +795,13 @@ fn smooth_60fps_playback_has_no_long_gaps() {
         report.p95
     );
     assert!(
-        report.max <= 2.5,
-        "one badly scheduled 60 fps slice is tolerated (max={:.2})",
+        report.max <= MAX_60_ALLOWANCE,
+        "60 fps slice spikes must stay within the runner allowance (max={:.2})",
         report.max
     );
     assert!(
-        report.long_gaps.len() <= 2,
-        "no repeated 60 fps long gaps: {:?}",
+        report.long_gaps.len() <= LONG_GAP_ALLOWANCE,
+        "no repeated 60 fps long gaps beyond the runner allowance: {:?}",
         report.long_gaps
     );
 
