@@ -448,12 +448,26 @@ pub fn VideoFrameWithPoster(
     modifier: Modifier,
     poster: impl Fn() + 'static,
 ) {
-    picture_with(handle, modifier, Some(Rc::new(poster)));
+    picture_with(handle, modifier, Some(Poster(Rc::new(poster))));
+}
+
+/// A poster closure wrapped so composition can compare it by identity.
+///
+/// The frame pump is keyed on the player handle, not on the poster: a poster
+/// is a static shutter, so changing the closure at the same call site does not
+/// restart playback. Treating every poster as equal expresses that.
+#[derive(Clone)]
+struct Poster(Rc<dyn Fn()>);
+
+impl PartialEq for Poster {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
 }
 
 /// The frame pump shared by [`VideoFrame`] and [`VideoFrameWithPoster`].
 #[composable]
-fn picture_with(handle: VideoPlayerHandle, modifier: Modifier, poster: Option<Rc<dyn Fn()>>) {
+fn picture_with(handle: VideoPlayerHandle, modifier: Modifier, poster: Option<Poster>) {
     let picture = rememberMutableStateOf(|| None::<ImageBitmap>);
     let failure = handle.player().err();
     let frames = handle;
@@ -488,24 +502,30 @@ fn picture_with(handle: VideoPlayerHandle, modifier: Modifier, poster: Option<Rc
         }
     });
     match failure {
-        Some(error) => Text(
-            error.to_string(),
-            modifier.padding(8.0),
-            TextStyle::default(),
-        ),
+        Some(error) => {
+            Text(
+                error.to_string(),
+                modifier.padding(8.0),
+                TextStyle::default(),
+            );
+        }
         None => match picture.get() {
-            Some(image) => Image(
-                image,
-                None,
-                modifier,
-                Alignment::CENTER,
-                ContentScale::Fit,
-                1.0,
-                None,
-            ),
+            Some(image) => {
+                Image(
+                    image,
+                    None,
+                    modifier,
+                    Alignment::CENTER,
+                    ContentScale::Fit,
+                    1.0,
+                    None,
+                );
+            }
             None => match poster {
-                Some(shutter) => shutter(),
-                None => Spacer(modifier),
+                Some(shutter) => (shutter.0)(),
+                None => {
+                    Spacer(modifier);
+                }
             },
         },
     };

@@ -162,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fna_live_source_is_never_rewound() {
+    fn a_live_source_is_never_rewound() {
         let ten = Duration::from_secs(10);
         for mode in [RepeatMode::Off, RepeatMode::One, RepeatMode::All] {
             assert!(
