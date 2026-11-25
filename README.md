@@ -64,17 +64,17 @@ VideoFrame(handle, modifier)
 
 ## Platform support and verification
 
-Evidence: GitHub Actions run **45704905973** (branch `master`, 2026-11-25 21:30 UTC, commit "Accept backend-specific error variants for a missing file"). **All seven jobs passed** on this exact code.
+Evidence: GitHub Actions run **45709461351** (branch `master`, 2026-11-25 22:00 UTC, commit "Add rustdoc to SegmentKey byte-range fields"). **All seven jobs passed** on this exact code.
 
 | CI job | Result | Notes |
 |---|---|---|
-| `native-windows` | **PASS** (6m26s) | Check (`player,native-audio`) and full tests. |
-| `native-linux` | **PASS** (4m01s) | GStreamer dev packages; check with `linux-gstreamer`, tests serial. |
-| `native-macos` | **PASS** (2m04s) | Full check and all tests. |
-| `cross-wasm` | **PASS** (54s) | `wasm32-unknown-unknown`, `--no-default-features --features widget`. |
-| `cross-android` aarch64 | **PASS** (1m17s) | NDK clang, `--no-default-features --features widget`. |
-| `cross-android` armv7 | **PASS** (1m12s) | Same, second ABI. |
-| `cross-ios` | **PASS** (1m20s) | `aarch64-apple-ios`; the earlier `NSNotification`/`block2` failure is fixed. |
+| `native-windows` | **PASS** (4m52s) | Check (`player,native-audio`) and full tests. |
+| `native-linux` | **PASS** (3m20s) | GStreamer dev packages; check with `linux-gstreamer`, tests serial. |
+| `native-macos` | **PASS** (4m10s) | Full check and all tests. |
+| `cross-wasm` | **PASS** (46s) | `wasm32-unknown-unknown`, `--no-default-features --features widget`. |
+| `cross-android` aarch64 | **PASS** (1m18s) | NDK clang, `--no-default-features --features widget`. |
+| `cross-android` armv7 | **PASS** (1m03s) | Same, second ABI. |
+| `cross-ios` | **PASS** (1m07s) | `aarch64-apple-ios`; the earlier `NSNotification`/`block2` failure is fixed. |
 
 The wall-clock 60 fps pacing test is skipped on the macOS CI runner, which cannot sustain a 60 fps cadence; the deterministic synthetic pacing tests still run there. Windows avoids `--all-features` because Cranpose 0.28's `mach-dxcompiler` build script refuses to download a mutable GitHub release — an upstream CI-environment issue, not this crate's code.
 
