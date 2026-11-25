@@ -15,8 +15,11 @@ pub enum SegmentKey {
     Media(String),
     /// A media segment addressed by byte range within a URI.
     ByteRange {
+        /// The URI of the containing resource.
         uri: String,
+        /// First byte of the range.
         start: u64,
+        /// Number of bytes in the range.
         length: u64,
     },
 }
