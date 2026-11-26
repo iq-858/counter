@@ -35,6 +35,34 @@ impl Range {
     }
 }
 
+/// One partial segment (`#EXT-X-PART`) of a low-latency stream.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Part {
+    /// Resolved URI of the part.
+    pub(crate) uri: String,
+    /// Declared duration in seconds.
+    pub(crate) duration: f64,
+    /// Whether this part ends the segment it belongs to.
+    pub(crate) independent: bool,
+}
+
+/// The low-latency facts a media playlist declares.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct LowLatency {
+    /// `EXT-X-PART-INF`: the target part duration in seconds.
+    pub(crate) part_target: Option<f64>,
+    /// `EXT-X-SERVER-CONTROL`: the server's hold-back in seconds.
+    pub(crate) hold_back: Option<f64>,
+    /// `EXT-X-SERVER-CONTROL`: whether blocking playlist reload is offered.
+    pub(crate) can_block_reload: bool,
+    /// `EXT-X-SERVER-CONTROL`: whether delta playlist updates are offered.
+    pub(crate) can_skip_dates: bool,
+    /// Parts of the most recent segment, in playlist order.
+    pub(crate) parts: Vec<Part>,
+    /// `EXT-X-PRELOAD-HINT`: the URI the server says to fetch next.
+    pub(crate) preload_hint: Option<String>,
+}
+
 /// One segment of a media playlist.
 #[derive(Debug, Clone)]
 pub(crate) struct Segment {
@@ -53,6 +81,8 @@ pub(crate) struct Segment {
 /// A media playlist: the parts that make a stream and where it ends.
 #[derive(Debug, Clone)]
 pub(crate) struct Media {
+    /// Low-latency facts, empty for a classic playlist.
+    pub(crate) low_latency: LowLatency,
     /// The segments, in the order they play.
     pub(crate) segments: Vec<Segment>,
     /// The initialization segment, when the stream names one. A fragmented
@@ -72,6 +102,11 @@ pub(crate) struct Media {
 }
 
 impl Media {
+    /// The low-latency facts this playlist declares.
+    pub(crate) fn low_latency(&self) -> &LowLatency {
+        &self.low_latency
+    }
+
     /// How long the whole playlist plays.
     pub(crate) fn total(&self) -> Duration {
         let last = self.segments.last().map_or(0.0, |segment| segment.duration);
@@ -98,6 +133,7 @@ impl Media {
     /// needs real segments calls `ensure_loaded` first.
     pub(crate) fn empty() -> Self {
         Self {
+            low_latency: LowLatency::default(),
             segments: Vec::new(),
             map: None,
             ended: false,
@@ -395,6 +431,7 @@ pub(crate) fn media(text: &str, base: &str) -> Result<Media, VideoError> {
     let mut range: Option<(u64, Option<u64>)> = None;
     let mut previous: Option<(String, u64)> = None;
     let mut discontinuity = false;
+    let mut low_latency = LowLatency::default();
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -450,6 +487,34 @@ pub(crate) fn media(text: &str, base: &str) -> Result<Media, VideoError> {
             return Err(VideoError::Source(
                 "the address names a master playlist, not a media playlist".to_owned(),
             ));
+        } else if let Some(body) = line.strip_prefix("#EXT-X-PART-INF:") {
+            if let Ok(value) = body.trim().parse::<f64>() {
+                if value.is_finite() && value > 0.0 {
+                    low_latency.part_target = Some(value);
+                }
+            }
+        } else if let Some(body) = line.strip_prefix("#EXT-X-SERVER-CONTROL:") {
+            if let Some(value) = attribute(body, "HOLD-BACK")
+                .and_then(|v| v.parse::<f64>().ok())
+            {
+                low_latency.hold_back = Some(value);
+            }
+            low_latency.can_block_reload =
+                attribute(body, "CAN-BLOCK-RELOAD").as_deref() == Some("YES");
+            low_latency.can_skip_dates =
+                attribute(body, "CAN-SKIP-UNTIL").is_some();
+        } else if let Some(body) = line.strip_prefix("#EXT-X-PART:") {
+            if let Some(uri) = attribute(body, "URI") {
+                low_latency.parts.push(Part {
+                    uri: resolve(base, &uri),
+                    duration: attribute(body, "DURATION")
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .unwrap_or(0.0),
+                    independent: attribute(body, "INDEPENDENT").as_deref() == Some("YES"),
+                });
+            }
+        } else if let Some(body) = line.strip_prefix("#EXT-X-PRELOAD-HINT:") {
+            low_latency.preload_hint = attribute(body, "URI").map(|uri| resolve(base, &uri));
         } else if line.starts_with('#') {
             // Tags this reader ignores state where a segment sits in the
             // stream or how a player should treat the start of it, neither of
@@ -494,6 +559,7 @@ pub(crate) fn media(text: &str, base: &str) -> Result<Media, VideoError> {
         elapsed += segment.duration;
     }
     Ok(Media {
+        low_latency,
         segments,
         map,
         ended,
@@ -1084,3 +1150,34 @@ seg.mp4\n";
         assert_eq!(media.segments.len(), 2);
     }
 }
+
+    #[test]
+    fn parses_low_latency_tags() {
+        let text = "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-PART-INF:0.5\n#EXT-X-SERVER-CONTROL:HOLD-BACK=3.0,CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=12.0\n#EXT-X-PART:DURATION=0.5,URI=part1.mp4,INDEPENDENT=YES\n#EXT-X-PART:DURATION=0.4,URI=part2.mp4\n#EXT-X-PRELOAD-HINT:URI=part3.mp4\n#EXTINF:4.0,\nseg1.ts\n#EXT-X-ENDLIST\n";
+        let base = "https://cdn/live/stream.m3u8";
+        let media = media(text, base).expect("a low-latency playlist");
+        assert_eq!(media.low_latency.part_target, Some(0.5));
+        assert_eq!(media.low_latency.hold_back, Some(3.0));
+        assert!(media.low_latency.can_block_reload);
+        assert!(media.low_latency.can_skip_dates);
+        assert_eq!(media.low_latency.parts.len(), 2);
+        assert!(media.low_latency.parts[0].independent);
+        assert!(!media.low_latency.parts[1].independent);
+        assert_eq!(
+            media.low_latency.parts[0].uri,
+            "https://cdn/live/part1.mp4"
+        );
+        assert_eq!(
+            media.low_latency.preload_hint.as_deref(),
+            Some("https://cdn/live/part3.mp4")
+        );
+        // The classic fields still parse alongside the new ones.
+        assert_eq!(media.segments.len(), 1);
+    }
+
+    #[test]
+    fn a_classic_playlist_has_no_low_latency_facts() {
+        let text = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg.ts\n#EXT-X-ENDLIST\n";
+        let media = media(text, "https://cdn/a.m3u8").expect("a classic playlist");
+        assert_eq!(media.low_latency, LowLatency::default());
+    }

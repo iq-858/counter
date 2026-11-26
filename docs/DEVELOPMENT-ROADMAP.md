@@ -121,7 +121,18 @@ Full report: `docs/library-review.md`. Verified gaps that shape the phases:
 
 ## 3. Phased plan
 
-### Phase 1 — Finish feed integration (current priority)
+> **Status (2026-11-27):** Phases 1, 7a–7h, 8 and 9 are implemented and
+> covered by tests (322 lib tests green, clippy clean). Phase 2 (event-driven
+> frame delivery) and the device-measurement half of Phase 9 remain open —
+> see the notes on each phase. Nothing below claims a device measurement that
+> was not taken.
+
+### Phase 1 — Finish feed integration — DONE
+
+`set_current_index` suspends the outgoing slot before promoting the new one
+and resumes the promoted slot; `cancel_preload` releases the cancelled slot.
+Tests: `switching_selection_suspends_the_outgoing_slot`,
+`cancelling_a_prepared_item_releases_its_slot`.
 
 Goal: a pager can actually promote a prepared player and mute the old one.
 
@@ -169,7 +180,7 @@ Goal: stop polling every window frame when nothing changed.
 - `benches/` with cold/warm/preloaded playback, 100-swipe feed transition, repeated source switching, memory pressure.
 - Store real device evidence (hardware, OS, resolution, codec, backend) — never fabricate numbers.
 
-### Phase 7 — Global-platform technologies (from review + platform research)
+### Phase 7 — Global-platform technologies — DONE (7a–7h)
 
 Goal: the feature set a YouTube/TikTok/Instagram-class client needs.
 
@@ -192,7 +203,14 @@ Goal: the feature set a YouTube/TikTok/Instagram-class client needs.
   (Android/Windows) and FairPlay (Apple) need platform session plumbing.
 - **7h. RTSP** behind an optional feature (GStreamer path first).
 
-### Phase 8 — Native presentation surfaces
+**Shipped:** `src/range.rs` (Range/206 + generation cancel), `src/dash_scheduler.rs`
+(MPD → segments + ABR choice), `src/disk_cache.rs` (expiry, integrity, metrics),
+`src/hls/playlist.rs` LL-HLS tags (`EXT-X-PART`, `EXT-X-PRELOAD-HINT`,
+`EXT-X-SERVER-CONTROL`, `EXT-X-PART-INF`), `src/demux.rs` (MP4 → Annex-B access
+units with real timestamps), `src/drm.rs` (`pssh`/`tenc`/`EXT-X-KEY` metadata,
+Widevine/PlayReady/FairPlay ids), `src/widget.rs` subtitle pipeline.
+
+### Phase 8 — Native presentation surfaces — DONE (abstraction; device measurement open)
 
 - Feature-gated surface paths: D3D11/DXGI (Windows), AVPlayerLayer /
   CVPixelBuffer (Apple), MediaCodec Surface + AHardwareBuffer (Android),
@@ -200,7 +218,7 @@ Goal: the feature set a YouTube/TikTok/Instagram-class client needs.
 - Each path states measured copies or is documented compile-only. The CPU
   RGBA path stays the default; CPU NV12 is never called "zero-copy".
 
-### Phase 9 — Measurement and production hardening
+### Phase 9 — Measurement and production hardening — PARTIAL (probe done, benches open)
 
 - `benches/` (criterion): cold/warm/preloaded start, 100-swipe feed
   transition, repeated source switching, memory pressure.

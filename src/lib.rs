@@ -19,7 +19,9 @@ mod dash;
 mod dash_scheduler;
 mod decode_result;
 mod decoder;
+mod demux;
 mod diagnostics;
+mod drm;
 mod disk_cache;
 mod error;
 mod events;
@@ -42,12 +44,14 @@ mod pixels;
 mod playback_params;
 mod preload;
 mod preload_coordinator;
+mod probe;
 mod platform;
 mod pool;
 mod player;
 mod range;
 mod repeat_mode;
 mod resource;
+mod surface;
 mod segment;
 #[cfg(all(not(target_os = "linux"), not(target_arch = "wasm32")))]
 mod session;
@@ -81,6 +85,7 @@ pub use controller::{CpuSurface, PlaybackController, VideoSurface};
 pub use dash::{DashManifest, DashRepresentation, parse_mpd};
 pub use dash_scheduler::{DashSegment, DashStream, choose_stream, schedule as schedule_dash};
 pub use decode_result::{FrameStamp, ReadOutcome};
+pub use demux::{AccessUnit as ContainerAccessUnit, DemuxError, Mp4Codec, demux_mp4};
 pub use decoder::{DecodedFrame, VideoDecoder};
 pub use disk_cache::{CacheMetrics, DiskCache};
 pub(crate) use diagnostics::diag;
@@ -91,6 +96,10 @@ pub use cranpose::PlayerSurface as VideoHardwareSurface;
 pub use cranpose_services::{
     AccessUnit, DecoderCapabilities, DecoderConfig, DecoderError, DecoderOutput, DecodedFrames,
     DecoderStats, VideoCodec as UpstreamVideoCodec,
+};
+pub use drm::{
+    FAIRPLAY_SYSTEM_ID, PLAYREADY_SYSTEM_ID, ProtectionInfo, ProtectionSystem,
+    WIDEVINE_SYSTEM_ID, parse_hls_key, parse_protection, parse_pssh_boxes,
 };
 pub use error::VideoError;
 pub use events::{EventBus, PlaybackEventKind, PlaybackEventRecord};
@@ -106,6 +115,7 @@ pub use media::{Container, MediaInfo};
 pub use playback_params::{MAX_SPEED, MIN_SPEED, PlaybackParameters};
 pub use preload::{PreloadManager, PreloadStage};
 pub use preload_coordinator::{PreloadConfig, PreloadCoordinator, PreloadLevel, PreloadTask};
+pub use probe::{ProbeResult, RuntimeProbe, shared as shared_probe};
 pub use range::{RangeFetcher, RangeOutcome, RangeRequest};
 pub use platform::Platform;
 pub use player::VideoPlayer;
@@ -122,6 +132,7 @@ pub use source::VideoSource;
 pub use state::VideoState;
 pub use stream_policy::{BufferSnapshot, StreamChoice, StreamPolicy};
 pub use subtitle::{SubtitleCue, active_at, parse as parse_subtitles};
+pub use surface::{SurfaceEvidence, SurfaceKind, SurfacePlan};
 pub use telemetry::{EventRecord, PlaybackDiagnostics, PlaybackEvent, SessionId};
 #[cfg(feature = "upstream-video")]
 pub use upstream::HardwareVideo;

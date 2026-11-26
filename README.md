@@ -887,6 +887,26 @@ Stages: `Idle/Requested/Downloading/Preparing/Prepared/Failed/Cancelled`. Method
 
 `schedule_dash(&manifest, base_url, segment_count, segment_duration_ms)` → `Vec<DashStream>`; `DashStream { id, bandwidth, height, initialization, segments }` with `segment_url` and `duration_ms`; `choose_stream(&mut abr, &streams, throughput_bps, buffer_millis)` → `Option<usize>`.
 
+### Low-latency HLS — `EXT-X-PART`, `EXT-X-PRELOAD-HINT`
+
+The media-playlist reader collects the LL-HLS tags instead of ignoring them: `EXT-X-PART-INF` (part target), `EXT-X-SERVER-CONTROL` (hold-back, `CAN-BLOCK-RELOAD`, `CAN-SKIP-UNTIL`), every `EXT-X-PART` (URI, duration, `INDEPENDENT`) and `EXT-X-PRELOAD-HINT`. A classic playlist yields empty low-latency facts, so the same reader serves both.
+
+### Container demuxing — `demux_mp4`
+
+`demux_mp4(bytes)` reads a progressive MP4's `moov` sample table and `mdat` payload and returns `(Mp4Codec, Vec<ContainerAccessUnit>)` with Annex-B bytes and timestamps derived from `stts`/`mdhd` — replacing the fixed 40 ms step the raw `open_stream` path assumed. `Mp4Codec` is `H264` or `Hevc`; `DemuxError` is `NotMp4`, `NoVideoTrack` or `BrokenSampleTable`. Scope: one video track, no fragmentation, no audio.
+
+### DRM metadata — `parse_protection`, `parse_pssh_boxes`, `parse_hls_key`
+
+Reads what a protected source asks for without decrypting: `pssh` boxes (v0 and v1, with key ids), the `tenc` default key id, and the HLS `EXT-X-KEY` method. `ProtectionInfo` exposes `is_protected`, `widevine`, `playready` and `fairplay` against the registered system ids (`WIDEVINE_SYSTEM_ID`, `PLAYREADY_SYSTEM_ID`, `FAIRPLAY_SYSTEM_ID`). Decryption itself stays with the platform session.
+
+### Presentation surfaces — `SurfacePlan`
+
+`SurfacePlan::for_platform(platform)` names the zero-copy route each platform offers (`D3d11`, `CVPixelBuffer`, `AndroidSurface`, `DmaBuf`, `BrowserVideo`) and the evidence behind it. `SurfaceEvidence` is `Measured(copies)`, `CompileOnly` or `Planned`; the default path stays `CpuRgba` and `default_is_zero_copy()` is false until a route is actually the default — CPU RGBA is never called zero-copy.
+
+### Runtime capability probe — `RuntimeProbe`
+
+`VideoCapabilities::detect` answers from compile-time tables; `RuntimeProbe` records what the real decoder accepted (`record`, `outcome`, `all`) and `effective_codecs` intersects the table with the probe, dropping a codec the device refused. `shared_probe()` is the process-wide instance.
+
 ### Subtitles — `parse_subtitles`, `active_at`, `VideoSubtitles`
 
 `parse_subtitles(text)` → `Vec<SubtitleCue>` (SRT and WebVTT, malformed blocks skipped), `active_at(&cues, time)` → active cues. On a `VideoPlayerHandle`: `load_subtitles(text)`, `clear_subtitles()`, `active_cues()`. The `VideoSubtitles(handle, modifier)` composable draws the active cue over the picture.
