@@ -210,6 +210,11 @@ impl VideoFeedController {
         self.current = index;
         self.stages[index] = FeedStage::Playing;
 
+        // The outgoing page goes quiet first, so two clips are never audible
+        // at once even if the new slot has no player attached yet.
+        if let Some(previous) = self.active_slot {
+            self.pool.suspend_player(previous);
+        }
         let owner = match self.preloaded.remove(&index) {
             Some(slot) => slot,
             None => self.pool.reserve(Priority::Active),
@@ -220,6 +225,9 @@ impl VideoFeedController {
         let _ = self.pool.promote(id, Priority::Active);
         self.active_slot = Some(id);
         self.active_owner = Some(owner);
+        // A prepared slot resumes where its preload left off; a fresh slot has
+        // no player yet, which `resume_player` reports as `None`.
+        self.pool.resume_player(id);
         true
     }
 
@@ -280,11 +288,17 @@ impl VideoFeedController {
             return false;
         }
         self.generations[index] = self.generations[index].wrapping_add(1);
-        let was_pending = self.preloaded.remove(&index).is_some()
+        let slot = self.preloaded.remove(&index);
+        let was_pending = slot.is_some()
             || matches!(
                 self.stages[index],
                 FeedStage::Requested | FeedStage::Downloading | FeedStage::Preparing
             );
+        // A cancelled preparation must not keep holding a decode slot: release
+        // it so the budget is free for the item the user actually selected.
+        if let Some(slot) = slot {
+            self.pool.release_player(slot.id());
+        }
         self.stages[index] = FeedStage::Cancelled;
         was_pending
     }
@@ -418,6 +432,32 @@ mod tests {
         feed.set_items(items());
         feed.set_current_index(0);
         assert_eq!(feed.preload_next(), None);
+    }
+
+    #[test]
+    fn switching_selection_suspends_the_outgoing_slot() {
+        let mut feed = VideoFeedController::new(VideoFeedConfig::default());
+        feed.set_items(items());
+        feed.set_current_index(0);
+        let outgoing = feed.active_slot().expect("the first selection owns a slot");
+        assert!(feed.set_current_index(1));
+        // The old slot is still warm (kept for a fast swipe back) but must not
+        // be the audible one anymore.
+        assert_eq!(feed.pool().audible(), feed.active_slot());
+        assert_ne!(feed.active_slot(), Some(outgoing));
+    }
+
+    #[test]
+    fn cancelling_a_prepared_item_releases_its_slot() {
+        let mut feed = VideoFeedController::new(VideoFeedConfig::default());
+        feed.set_items(items());
+        feed.set_current_index(0);
+        let generation = feed.begin_preload(1).unwrap();
+        assert!(feed.finish_preload(1, generation));
+        let slots_before = feed.pool().len();
+        assert!(feed.cancel_preload(1));
+        assert_eq!(feed.pool().len(), slots_before - 1, "a cancelled preparation must not keep its decode slot");
+        assert_eq!(feed.prepared_count(), 0);
     }
 
     #[test]
