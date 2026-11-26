@@ -787,7 +787,7 @@ fn smooth_60fps_playback_has_no_long_gaps() {
         "60 fps media time must advance one 16.666 ms period per published frame"
     );
     assert!(
-        report.reanchors <= REANCHOR_ALLOWANCE,
+        report.reanchors == REANCHOR_ALLOWANCE,
         "healthy 60 fps pacing must not re-anchor beyond the runner allowance (was {})",
         report.reanchors
     );

@@ -9,7 +9,10 @@ use cranpose_ui::{
     widgets::{Box, BoxSpec, Slider, SliderScope, SliderSpec},
 };
 
-use crate::{VideoError, VideoInfo, VideoPlayer, VideoSource, VideoState};
+use crate::{
+    SubtitleCue, VideoError, VideoInfo, VideoPlayer, VideoSource, VideoState, active_at,
+    parse_subtitles,
+};
 
 /// How far the seek buttons of [`VideoWithControls`] move the clock.
 const SEEK_STEP: Duration = Duration::from_secs(5);
@@ -27,6 +30,8 @@ const PROGRESS_THUMB: f32 = 12.0;
 #[derive(Clone)]
 pub struct VideoPlayerHandle {
     opened: Rc<Result<VideoPlayer, VideoError>>,
+    /// Parsed cues of the loaded subtitle track, shared by every clone.
+    cues: Rc<std::cell::RefCell<Rc<[SubtitleCue]>>>,
 }
 
 impl PartialEq for VideoPlayerHandle {
@@ -164,6 +169,32 @@ impl VideoPlayerHandle {
             .and_then(VideoPlayer::hardware_frames)
     }
 
+    /// Loads a subtitle track from SRT or WebVTT text.
+    ///
+    /// The cues are parsed once and shared by every clone of this handle. The
+    /// screen renders them with [`VideoSubtitles`], or reads
+    /// [`active_cues`](Self::active_cues) itself and draws them its own way.
+    /// Malformed blocks are skipped, never fatal.
+    pub fn load_subtitles(&self, text: &str) {
+        let cues: Rc<[SubtitleCue]> = parse_subtitles(text).into();
+        *self.cues.borrow_mut() = cues;
+    }
+
+    /// Removes the loaded subtitle track.
+    pub fn clear_subtitles(&self) {
+        *self.cues.borrow_mut() = Rc::from(Vec::new());
+    }
+
+    /// The cues active at the player's current position.
+    pub fn active_cues(&self) -> Vec<SubtitleCue> {
+        let cues = Rc::clone(&self.cues.borrow());
+        if cues.is_empty() {
+            return Vec::new();
+        }
+        let position = self.position();
+        active_at(&cues, position).into_iter().cloned().collect()
+    }
+
     /// How fast the clock runs.
     pub fn speed(&self) -> f32 {
         self.player().map_or(1.0, VideoPlayer::speed)
@@ -197,7 +228,11 @@ pub fn rememberVideoPlayer(source: impl Into<VideoSource> + 'static) -> VideoPla
     // and opens the new one.
     let opened: Rc<Result<VideoPlayer, VideoError>> =
         rememberKeyed(source, |source| Rc::new(VideoPlayer::open(source.clone())));
-    VideoPlayerHandle { opened }
+    let cues = rememberMutableStateOf(|| Rc::<[SubtitleCue]>::from(Vec::new()));
+    VideoPlayerHandle {
+        opened,
+        cues: Rc::new(std::cell::RefCell::new(Rc::clone(&cues.value()))),
+    }
 }
 
 /// Plays a video inside the box `modifier` gives it.
@@ -219,6 +254,49 @@ pub fn Video(source: impl Into<VideoSource> + 'static, modifier: Modifier) {
 #[composable]
 pub fn VideoFrame(handle: VideoPlayerHandle, modifier: Modifier) {
     picture(handle, modifier);
+}
+
+/// Plays a video above the buttons that drive it.
+///
+/// A screen that wants other controls composes [`Video`] beside them instead.
+/// Draws the subtitle cues active at the player's current position.
+///
+/// Compose it over the picture after loading a track with
+/// [`VideoPlayerHandle::load_subtitles`]. The text is drawn at the bottom of
+/// the box `modifier` gives it; a screen that wants its own styling reads
+/// [`VideoPlayerHandle::active_cues`] instead.
+#[composable]
+pub fn VideoSubtitles(handle: VideoPlayerHandle, modifier: Modifier) {
+    // The clock lives in the player, so a one-shot read would freeze the cue.
+    // A per-frame tick re-evaluates the active cue as the position advances.
+    let tick = rememberMutableStateOf(|| 0u64);
+    let tick_state = tick.clone();
+    LaunchedEffect(handle.clone(), async move |scope| {
+        loop {
+            scope.with_frame_nanos(|_| ()).await;
+            tick_state.set(tick_state.get().wrapping_add(1));
+        }
+    });
+    let _ = tick.get();
+    let cues = handle.active_cues();
+    if cues.is_empty() {
+        return;
+    }
+    let text = cues
+        .iter()
+        .flat_map(|cue| cue.lines.iter().cloned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Box(
+        modifier,
+        BoxSpec {
+            content_alignment: Alignment::BOTTOM_CENTER,
+            ..Default::default()
+        },
+        move || {
+            Text(text.clone(), Modifier::empty().padding(8.0), TextStyle::default());
+        },
+    );
 }
 
 /// Plays a video above the buttons that drive it.
@@ -620,4 +698,51 @@ fn clock(position: Duration) -> String {
     let minutes = position.as_secs() / 60;
     let seconds = position.as_secs() % 60;
     format!("{minutes}:{seconds:02}.{}", position.subsec_millis() / 100)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failed_handle() -> VideoPlayerHandle {
+        VideoPlayerHandle {
+            opened: Rc::new(Err(VideoError::Unsupported {
+                platform: "test",
+            })),
+            cues: Rc::new(std::cell::RefCell::new(Rc::from(Vec::new()))),
+        }
+    }
+
+    #[test]
+    fn a_loaded_track_is_parsed_and_shared_by_clones() {
+        let handle = failed_handle();
+        handle.load_subtitles("1\n00:00:00,000 --> 00:00:05,000\nHello\n");
+        let clone = handle.clone();
+        assert_eq!(clone.cues.borrow().len(), 1);
+        assert_eq!(clone.cues.borrow()[0].lines, vec!["Hello"]);
+    }
+
+    #[test]
+    fn clearing_removes_every_cue() {
+        let handle = failed_handle();
+        handle.load_subtitles("1\n00:00:00,000 --> 00:00:05,000\nHello\n");
+        handle.clear_subtitles();
+        assert!(handle.cues.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_cue_at_the_start_is_active_at_position_zero() {
+        let handle = failed_handle();
+        handle.load_subtitles("1\n00:00:00,000 --> 00:00:05,000\nHello\n");
+        // A failed player reports position zero, which is inside the cue.
+        let active = handle.active_cues();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].lines, vec!["Hello"]);
+    }
+
+    #[test]
+    fn an_empty_track_reports_no_active_cues() {
+        let handle = failed_handle();
+        assert!(handle.active_cues().is_empty());
+    }
 }

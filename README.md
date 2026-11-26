@@ -487,7 +487,8 @@ Three more engine layers are available without new dependencies:
   good throughput samples and enough buffered media. Fixed `Lowest`, `Medium`
   and `Highest` modes are also available.
 - `DiskCache` writes payloads under a root directory with safe encoded keys and
-  atomic rename, and evicts oldest files when the byte budget is exceeded.
+  atomic rename, evicts oldest files when the byte budget is exceeded, and
+  supports expiry, integrity checks and hit/miss metrics.
 
 ```text
 let manifest = parse_mpd(mpd_text)?;
@@ -497,8 +498,22 @@ let cache = DiskCache::open("./cache", 512 * 1024 * 1024)?;
 cache.put("segment-1", &bytes)?;
 ```
 
-These are building blocks, not a complete DASH player: scheduling, segment
-fetching and synchronization remain application or platform-backend work.
+`schedule_dash(&manifest, base_url, segment_count, segment_duration_ms)` turns
+a parsed MPD into ordered `DashStream`/`DashSegment` lists with `$Number$`
+substituted, and `choose_stream(&mut abr, &streams, throughput, buffer)` picks
+the representation the ABR policy prefers — the same policy that governs HLS.
+
+`RangeFetcher` is the byte layer: `RangeRequest` carries a URL, offset, length
+and generation, `fetch` issues a `Range`/206 request, and `supersede()` bumps
+the generation so late responses for a swiped-away item are dropped instead of
+landing in the wrong slot.
+
+`DiskCache` entries can expire (`put_expiring`) and carry an integrity tag; a
+truncated or overwritten payload reads as a miss and is removed. `metrics()`
+reports hits, misses and evictions.
+
+These are building blocks, not a complete DASH player: playlist refresh and
+audio/video synchronization remain application or platform-backend work.
 
 ### Segment scheduling
 
@@ -862,7 +877,19 @@ Stages: `Idle/Requested/Downloading/Preparing/Prepared/Failed/Cancelled`. Method
 ### Caching
 
 `MediaCache` (in-memory LRU): `with_limit`, `limit`, `bytes`, `len`, `is_empty`, `get`, `put`, `remove`, `clear`.
-`DiskCache` (persistent): `open(root, max_bytes)`, `get`, `put`, `remove`, `bytes`, `root`, `limit`.
+`DiskCache` (persistent): `open(root, max_bytes)`, `get`, `put`, `put_expiring`, `remove`, `bytes`, `root`, `limit`, `metrics`. Entries carry an integrity tag and optional expiry; a corrupted or expired payload reads as a miss.
+
+### Byte-range fetching — `RangeFetcher`
+
+`RangeRequest { url, start, length, generation }`, `RangeRequest::head(url, length, generation)`, `RangeFetcher::new`, `generation`, `supersede`, `fetch` → `RangeOutcome::{Fetched, FullBody, Superseded, Failed}`. A `200` answer to a `Range` request is reported as `FullBody` rather than silently truncated.
+
+### DASH scheduling — `schedule_dash`, `choose_stream`
+
+`schedule_dash(&manifest, base_url, segment_count, segment_duration_ms)` → `Vec<DashStream>`; `DashStream { id, bandwidth, height, initialization, segments }` with `segment_url` and `duration_ms`; `choose_stream(&mut abr, &streams, throughput_bps, buffer_millis)` → `Option<usize>`.
+
+### Subtitles — `parse_subtitles`, `active_at`, `VideoSubtitles`
+
+`parse_subtitles(text)` → `Vec<SubtitleCue>` (SRT and WebVTT, malformed blocks skipped), `active_at(&cues, time)` → active cues. On a `VideoPlayerHandle`: `load_subtitles(text)`, `clear_subtitles()`, `active_cues()`. The `VideoSubtitles(handle, modifier)` composable draws the active cue over the picture.
 
 ### Streaming / ABR
 

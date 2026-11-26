@@ -16,6 +16,7 @@ mod capabilities;
 mod color;
 mod controller;
 mod dash;
+mod dash_scheduler;
 mod decode_result;
 mod decoder;
 mod diagnostics;
@@ -44,6 +45,7 @@ mod preload_coordinator;
 mod platform;
 mod pool;
 mod player;
+mod range;
 mod repeat_mode;
 mod resource;
 mod segment;
@@ -77,9 +79,10 @@ pub use capabilities::{DecoderKind, VideoCapabilities, VideoCodec};
 pub use color::{ChromaLocation, ColorInfo, ColorPrimaries, HdrMetadata, TransferFunction};
 pub use controller::{CpuSurface, PlaybackController, VideoSurface};
 pub use dash::{DashManifest, DashRepresentation, parse_mpd};
+pub use dash_scheduler::{DashSegment, DashStream, choose_stream, schedule as schedule_dash};
 pub use decode_result::{FrameStamp, ReadOutcome};
 pub use decoder::{DecodedFrame, VideoDecoder};
-pub use disk_cache::DiskCache;
+pub use disk_cache::{CacheMetrics, DiskCache};
 pub(crate) use diagnostics::diag;
 pub use diagnostics::set_diagnostic_sink;
 #[cfg(feature = "upstream-video")]
@@ -103,6 +106,7 @@ pub use media::{Container, MediaInfo};
 pub use playback_params::{MAX_SPEED, MIN_SPEED, PlaybackParameters};
 pub use preload::{PreloadManager, PreloadStage};
 pub use preload_coordinator::{PreloadConfig, PreloadCoordinator, PreloadLevel, PreloadTask};
+pub use range::{RangeFetcher, RangeOutcome, RangeRequest};
 pub use platform::Platform;
 pub use player::VideoPlayer;
 pub use pool::{PlayerPool, PooledPlayer};
@@ -125,8 +129,8 @@ pub use tracks::{TrackInfo, TrackKind, TrackList};
 #[cfg(feature = "widget")]
 pub use widget::{
     Video, VideoControls, VideoFrame, VideoFrameWithPoster, VideoPlayerHandle,
-    VideoProgressSlider, VideoProgressSliderWith, VideoWithControls, progress_fraction_for,
-    rememberVideoPlayer,
+    VideoProgressSlider, VideoProgressSliderWith, VideoSubtitles, VideoWithControls,
+    progress_fraction_for, rememberVideoPlayer,
 };
 
 /// The platform whose decoder this build selected.
@@ -145,8 +149,8 @@ pub fn decoder_name() -> &'static str {
 /// Whether this build can decode video on the target it was compiled for.
 ///
 /// False on Linux without the `linux-gstreamer` feature, and on targets that
-/// have no media framework. [`VideoPlayer::with_decoder`] still works there
-/// with an application-supplied [`VideoDecoder`].
+/// have no media framework. [`VieoPlayer::with_ecoder`] still works there
+/// with an application-supplie [`VideoDecoder`].
 pub fn is_supported() -> bool {
     platform::SUPPORTED
 }
